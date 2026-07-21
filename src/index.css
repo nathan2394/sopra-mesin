@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+/* Base resets + a couple of element defaults Tailwind's preflight intentionally strips.
+   All component styling now lives in Tailwind utility classes (see src/ui/classNames.ts
+   for shared button/input/badge/status strings) rather than hand-written CSS classes. */
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-800 font-sans antialiased;
+}
+
+h1,
+h2,
+h3 {
+  @apply m-0 font-bold text-slate-800;
+}
+
+p {
+  @apply m-0;
+}
+
+a {
+  @apply text-blue-600;
+}

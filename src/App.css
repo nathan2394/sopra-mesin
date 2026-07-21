@@ -1,0 +1,4 @@
+/* All component styling has been migrated to Tailwind utility classes — see
+   src/ui/classNames.ts for the shared button/input/badge/status/table strings and
+   src/index.css for the Tailwind entry point + base element resets. This file is kept
+   only because App.tsx still imports it; add any truly global, non-utility CSS here. */
