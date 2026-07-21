@@ -17,15 +17,14 @@ const NAV_ITEMS = [
 export function Sidebar({ collapsed, onToggleCollapsed }: Props) {
   return (
     <aside
-      className={`sticky top-0 flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-150 ${
-        collapsed ? "w-[72px]" : "w-64"
-      }`}
+      className={`sticky top-0 flex h-screen shrink-0 flex-col border-r border-slate-200 bg-white transition-[width] duration-150 ${collapsed ? "w-[72px]" : "w-64"
+        }`}
     >
       <div className={`flex items-center gap-2.5 pt-5 pb-4 ${collapsed ? "justify-center px-0" : "px-5"}`}>
         <Logo />
         {!collapsed && (
           <div className="leading-tight">
-            <div className="text-[0.98rem] font-bold text-slate-800">Sopra PPS</div>
+            <div className="text-[0.98rem] font-bold text-slate-800">Sopra MESIN</div>
             <div className="text-[0.72rem] text-slate-400">MVP · v0.1.0</div>
           </div>
         )}
@@ -44,8 +43,7 @@ export function Sidebar({ collapsed, onToggleCollapsed }: Props) {
             end={end}
             title={collapsed ? label : undefined}
             className={({ isActive }) =>
-              `mb-0.5 flex items-center gap-2.5 rounded-md py-2 text-[0.88rem] font-medium no-underline ${
-                collapsed ? "justify-center px-2.5" : "px-2.5"
+              `mb-0.5 flex items-center gap-2.5 rounded-md py-2 text-[0.88rem] font-medium no-underline ${collapsed ? "justify-center px-2.5" : "px-2.5"
               } ${isActive ? "bg-blue-50 font-semibold text-blue-600" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`
             }
           >
