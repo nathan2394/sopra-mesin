@@ -31,6 +31,14 @@ function hoursFromNow(offset: number): Date {
   return d;
 }
 
+/** Offsets an existing ISO date string by `n` days, for milestones derived from an order's
+ * own dates (e.g. a job's internal/external QC dates relative to its order's delivery date). */
+function addDays(iso: string, n: number): string {
+  const d = new Date(iso);
+  d.setDate(d.getDate() + n);
+  return d.toISOString();
+}
+
 function uid(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
@@ -65,10 +73,7 @@ const CUSTOMERS = [
   "Anugerah Tirta Sentosa",
 ];
 
-let seq = 1;
-function nextOrderNo(prefix: string): string {
-  return `${prefix}-${String(seq++).padStart(5, "0")}`;
-}
+const SO_DELIVERY_OFFSETS = [-3, -1, 2, 4, 5, 7, 10, 14, 18, 25];
 
 function pick<T>(arr: T[], i: number): T {
   return arr[i % arr.length];
@@ -101,6 +106,13 @@ function makeOrderItems(seed: number, count: number): OrderLineItem[] {
 
 export function createSampleOrders(): Order[] {
   const orders: Order[] = [];
+
+  // Local (not module-level) so this function's order numbering is self-contained and
+  // reproducible regardless of whether createSampleScheduleJobs has run in this session.
+  let seq = 1;
+  function nextOrderNo(prefix: string): string {
+    return `${prefix}-${String(seq++).padStart(5, "0")}`;
+  }
 
   function buildOrder(
     i: number,
@@ -136,8 +148,7 @@ export function createSampleOrders(): Order[] {
   }
 
   // SO — paid, already-open sales orders.
-  const soDeliveryOffsets = [-3, -1, 2, 4, 5, 7, 10, 14, 18, 25];
-  soDeliveryOffsets.forEach((offset, i) => {
+  SO_DELIVERY_OFFSETS.forEach((offset, i) => {
     const status = offset < 0 ? OrderStatus.InProduction : i % 4 === 0 ? OrderStatus.Confirmed : i % 5 === 0 ? OrderStatus.Final : OrderStatus.Open;
     orders.push(buildOrder(i, OrderSourceType.SoPaid, "SO", offset, status, 1 + (i % 3)));
   });
@@ -220,6 +231,13 @@ export function createSampleScheduleJobs(machines: Machine[]): ScheduleJob[] {
   const jobs: ScheduleJob[] = [];
   const activeMachines = machines.filter((m) => m.isActive);
 
+  // Schedule jobs are production instances of paid SO orders — the Orders page is the
+  // source of truth, so a job's customer/product/qty/dates are drawn from a real SO order's
+  // own line item rather than invented separately. One order line may back several jobs
+  // (split across machines/cavities), same as one PO line can run on more than one machine.
+  const soOrders = createSampleOrders().filter((o) => o.sourceType === OrderSourceType.SoPaid);
+  const orderLines = soOrders.flatMap((order) => order.items.map((item) => ({ order, item })));
+
   activeMachines.forEach((machine, mi) => {
     let cursor = 0;
     const jobCount = 2 + (mi % 3); // 2-4 jobs per machine
@@ -232,29 +250,29 @@ export function createSampleScheduleJobs(machines: Machine[]): ScheduleJob[] {
 
       const start = hoursFromNow(cursor);
       const end = hoursFromNow(cursor + blockHours);
-      const deliveryOffsetDays = 2 + mi + j * 2;
       const idx = mi * 3 + j;
+      const { order, item } = orderLines[idx % orderLines.length];
 
       jobs.push({
         id: uid(),
         machineId: machine.id,
-        productName: pick(PRODUCTS, idx),
-        qty: 8000 + (mi + j) * 1500,
+        productName: item.description,
+        qty: item.qty,
         startAt: start.toISOString(),
         endAt: end.toISOString(),
         setupMinutes,
-        deliveryDate: daysFromNow(deliveryOffsetDays),
-        sourceOrderRefs: nextOrderNo("SO"),
+        deliveryDate: order.deliveryDate,
+        sourceOrderRefs: order.orderNo,
         status: cursor === 0 ? JobStatus.InProgress : JobStatus.Planned,
-        customerName: pick(CUSTOMERS, idx),
+        customerName: order.customerName,
         profile: pick(PROFILES, idx),
         itemCode: `4${String(50100000 + idx).padStart(8, "0")}`,
         shift: idx % 5 === 0 ? "S2" : "S1",
-        internalDate: daysFromNow(Math.max(0, deliveryOffsetDays - 5)),
-        externalDate: daysFromNow(Math.max(0, deliveryOffsetDays - 3)),
-        ship1Date: daysFromNow(Math.max(0, deliveryOffsetDays - 1)),
-        ship2Date: idx % 3 === 0 ? daysFromNow(deliveryOffsetDays + 2) : undefined,
-        finalDeliveryDate: daysFromNow(deliveryOffsetDays + (idx % 3 === 0 ? 4 : 2)),
+        internalDate: addDays(order.deliveryDate, -5),
+        externalDate: addDays(order.deliveryDate, -3),
+        ship1Date: order.poShipStart,
+        ship2Date: idx % 3 === 0 ? order.poShipEnd : undefined,
+        finalDeliveryDate: addDays(order.deliveryDate, idx % 3 === 0 ? 4 : 2),
       });
 
       cursor += blockHours;

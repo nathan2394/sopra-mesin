@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { useProduction } from "../hooks/useProduction";
+import { useOrders } from "../hooks/useOrders";
 import { ScheduleGrid } from "../components/ScheduleGrid";
 import { PageHeader } from "../components/PageHeader";
 import { StatsRow, StatCard } from "../ui/StatCard";
 import { Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
-import { JobStatus } from "../types";
+import { JobStatus, OrderStatus } from "../types";
 import type { ScheduleJob } from "../types";
 
 const JOB_STATUS_CLASS: Record<string, string> = {
@@ -16,13 +17,26 @@ const JOB_STATUS_CLASS: Record<string, string> = {
 
 const JOB_STATUS_OPTIONS = Object.values(JobStatus).map((s) => ({ value: s, label: s }));
 
+const ORDER_STATUS_CLASS: Record<string, string> = {
+  [OrderStatus.Open]: ui.statusOpen,
+  [OrderStatus.Confirmed]: ui.statusConfirmed,
+  [OrderStatus.Final]: ui.statusConfirmed,
+  [OrderStatus.InProduction]: ui.statusInProduction,
+  [OrderStatus.Fulfilled]: ui.statusFulfilled,
+  [OrderStatus.Cancelled]: ui.statusCancelled,
+};
+
 export function SchedulePage() {
   const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, removeJob, resetSampleData } =
     useProduction();
+  const { orders } = useOrders();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const selectedJob = scheduleJobs.find((j) => j.id === selectedJobId) ?? null;
   const selectedMachine = selectedJob ? machines.find((m) => m.id === selectedJob.machineId) : null;
+  const selectedOrder = selectedJob?.sourceOrderRefs
+    ? (orders.find((o) => o.orderNo === selectedJob.sourceOrderRefs) ?? null)
+    : null;
 
   const stats = useMemo(() => {
     const active = machines.filter((m) => m.isActive).length;
@@ -102,15 +116,29 @@ export function SchedulePage() {
                       {new Date(selectedJob.deliveryDate).toLocaleDateString()}
                     </td>
                   </tr>
-                  {selectedJob.sourceOrderRefs && <tr><td className={ui.td}>Order ref</td><td className={ui.td}>{selectedJob.sourceOrderRefs}</td></tr>}
+                  {selectedJob.sourceOrderRefs && (
+                    <>
+                      <tr><td className={ui.td}>Order ref</td><td className={ui.td}>{selectedJob.sourceOrderRefs}</td></tr>
+                      <tr>
+                        <td className={ui.td}>Sales order status</td>
+                        <td className={ui.td}>
+                          {selectedOrder ? (
+                            <span className={ORDER_STATUS_CLASS[selectedOrder.status]}>{selectedOrder.status}</span>
+                          ) : (
+                            <span className={ui.muted}>Order not found</span>
+                          )}
+                        </td>
+                      </tr>
+                    </>
+                  )}
                   <tr>
-                    <td className={ui.td}>Status</td>
+                    <td className={ui.td}>Job status</td>
                     <td className={ui.td}>
                       <Select
                         value={selectedJob.status}
                         onChange={(v) => handleStatusChange(selectedJob, v as ScheduleJob["status"])}
                         options={JOB_STATUS_OPTIONS}
-                        buttonClassName={ui.cx(JOB_STATUS_CLASS[selectedJob.status], "relative inline-flex cursor-pointer items-center pr-6")}
+                        buttonClassName={ui.cx(JOB_STATUS_CLASS[selectedJob.status], "relative inline cursor-pointer items-center pr-20 text-center")}
                       />
                     </td>
                   </tr>

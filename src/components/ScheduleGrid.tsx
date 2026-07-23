@@ -28,15 +28,18 @@ const DAY_WIDTH: Record<Scale, number> = { Daily: 34, Weekly: 13 };
 const ROW_H = 42;
 
 // Fixed label-column widths, shared between the header row and every body row so
-// everything lines up regardless of row kind.
+// everything lines up regardless of row kind. Widths are numeric (not Tailwind classes)
+// so we can sum them into LABEL_WIDTH for the frozen-column offset.
 const COLS = [
-  { key: "po", label: "PO #", width: "w-[84px]", align: "" },
-  { key: "customer", label: "Customer", width: "w-[130px]", align: "" },
-  { key: "itemNo", label: "Item #", width: "w-[96px]", align: "" },
-  { key: "qty", label: "Qty", width: "w-[68px]", align: "text-right" },
-  { key: "cell", label: "Machine", width: "w-[64px]", align: "" },
-  { key: "ship", label: "Ship", width: "w-[76px]", align: "" },
+  { key: "po", label: "PO #", width: 84, align: "" },
+  { key: "customer", label: "Customer", width: 130, align: "" },
+  { key: "itemNo", label: "Item #", width: 96, align: "" },
+  { key: "qty", label: "Qty", width: 68, align: "text-right" },
+  { key: "cell", label: "Machine", width: 64, align: "" },
+  { key: "ship", label: "Ship", width: 76, align: "" },
 ] as const;
+
+const LABEL_WIDTH = COLS.reduce((sum, c) => sum + c.width, 0);
 
 const STATUS_TONES: Record<string, { solid: string; light: string }> = {
   [JobStatus.Planned]: { solid: "#3b4a68", light: "#5c6d90" },
@@ -83,12 +86,12 @@ function computeProgressPct(job: ScheduleJob): number {
   return Math.round(((now - runStart) / (runEnd - runStart)) * 100);
 }
 
-const labelRowBase = `flex items-center border-b border-slate-200 text-[0.8rem] text-slate-800`;
+const labelRowBase = `flex items-center border-r border-b border-slate-200 text-[0.8rem] text-slate-800`;
 
 /** One label-row cell, sized/aligned to match its header counterpart. */
 function Cell({ col, children }: { col: (typeof COLS)[number]; children: ReactNode }) {
   return (
-    <div className={ui.cx(col.width, col.align, "truncate px-2")} style={{ height: ROW_H }}>
+    <div className={ui.cx(col.align, "shrink-0 truncate px-2")} style={{ width: col.width, height: ROW_H }}>
       {children}
     </div>
   );
@@ -109,6 +112,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, onSelectJob, 
   const [groupBy, setGroupBy] = useState<GroupBy>("None");
   const [search, setSearch] = useState("");
   const [showAllocation, setShowAllocation] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const dayWidth = DAY_WIDTH[scale];
   const rangeStart = startOfDay(new Date(startDate));
@@ -301,62 +305,26 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, onSelectJob, 
       {rows.length === 0 ? (
         <p className={ui.cx(ui.muted, "p-5")}>No jobs or maintenance windows in this window.</p>
       ) : (
-        <div className="flex max-h-[620px] items-start overflow-y-auto">
-          <div className="flex shrink-0 flex-col border-r border-slate-200 bg-white">
-            <div className="sticky top-0 z-20 flex items-center border-b border-slate-200 bg-slate-50" style={{ height: 58 }}>
-              {COLS.map((col) => (
-                <div key={col.key} className={ui.cx(col.width, col.align, "truncate px-2 text-[0.72rem] font-bold tracking-wide text-slate-400 uppercase")}>
-                  {col.label}
-                </div>
-              ))}
-            </div>
-            {renderItems.map((item, i) => {
-              if (item.type === "group") {
-                return (
+        <div className="max-h-[620px] overflow-auto">
+          <div className="relative" style={{ width: LABEL_WIDTH + timelineWidth, minWidth: "100%" }}>
+            {/* Header: sticky top freezes it vertically; the nested label block is also sticky
+             * left so the top-left corner stays pinned in both directions while scrolling. */}
+            <div className="sticky top-0 z-30 flex border-b border-slate-200 bg-slate-50">
+              <div
+                className="sticky left-0 z-10 flex shrink-0 items-center border-r border-slate-200 bg-slate-50"
+                style={{ width: LABEL_WIDTH, height: 58 }}
+              >
+                {COLS.map((col) => (
                   <div
-                    key={`g-${i}`}
-                    className="flex items-center border-b border-slate-200 bg-slate-50 px-3 text-[0.72rem] font-bold tracking-wide text-slate-500 uppercase"
-                    style={{ height: 30 }}
+                    key={col.key}
+                    style={{ width: col.width }}
+                    className={ui.cx(col.align, "shrink-0 truncate px-2 text-[0.72rem] font-bold tracking-wide text-slate-400 uppercase")}
                   >
-                    {item.label}
+                    {col.label}
                   </div>
-                );
-              }
-              const row = item.row;
-              if (row.kind === "job") {
-                const job = row.job;
-                const conflict = showAllocation && conflictJobIds.has(row.id);
-                return (
-                  <div
-                    key={row.id}
-                    className={ui.cx(labelRowBase, "cursor-pointer hover:bg-blue-50", conflict && "bg-red-50")}
-                    onClick={() => onSelectJob?.(job)}
-                  >
-                    <Cell col={COLS[0]}>{job.sourceOrderRefs ?? "—"}</Cell>
-                    <Cell col={COLS[1]}>{job.customerName ?? "—"}</Cell>
-                    <Cell col={COLS[2]}>{job.productName}</Cell>
-                    <Cell col={COLS[3]}>{job.qty.toLocaleString()}</Cell>
-                    <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
-                    <Cell col={COLS[5]}>{job.ship1Date ? new Date(job.ship1Date).toLocaleDateString(undefined, { day: "2-digit", month: "short" }) : "—"}</Cell>
-                  </div>
-                );
-              }
-              return (
-                <div key={row.id} className={ui.cx(labelRowBase, "cursor-default text-slate-500 italic")}>
-                  <Cell col={COLS[0]}>—</Cell>
-                  <Cell col={COLS[1]}>—</Cell>
-                  <Cell col={COLS[2]}>—</Cell>
-                  <Cell col={COLS[3]}>Stopped — {row.window.reason ?? row.window.type}</Cell>
-                  <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
-                  <Cell col={COLS[5]}>—</Cell>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex-1 overflow-x-auto overflow-y-hidden">
-            <div className="relative" style={{ width: timelineWidth }}>
-              <div className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50">
+                ))}
+              </div>
+              <div className="shrink-0" style={{ width: timelineWidth }}>
                 <div className="flex border-b border-slate-200" style={{ height: 24 }}>
                   {weekBands.map((band, i) => (
                     <div
@@ -383,28 +351,75 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, onSelectJob, 
                   ))}
                 </div>
               </div>
+            </div>
 
-              <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600" style={{ left: milestoneLeft(today.toISOString()) }} />
+            <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600" style={{ left: LABEL_WIDTH + milestoneLeft(today.toISOString()) }} />
 
-              {renderItems.map((item, i) => {
-                if (item.type === "group") {
-                  return <div key={`gt-${i}`} className="border-b border-slate-200 bg-slate-50" style={{ height: 30 }} />;
-                }
-                const row = item.row;
-                if (row.kind === "job") {
-                  return (
-                    <ScheduleJobBar
-                      key={row.id}
-                      job={row.job}
-                      barLeft={barLeft}
-                      dayWidth={dayWidth}
-                      conflict={showAllocation && conflictJobIds.has(row.id)}
-                      onDragCommit={onJobMoved ? (j, newStart) => onJobMoved(j.id, j.machineId, newStart) : undefined}
-                    />
-                  );
-                }
+            {renderItems.map((item, i) => {
+              if (item.type === "group") {
                 return (
-                  <div key={row.id} className="relative border-b border-slate-200" style={{ height: ROW_H }}>
+                  <div key={`g-${i}`} className="flex border-b border-slate-200 bg-slate-50" style={{ height: 30 }}>
+                    <div
+                      className="sticky left-0 z-10 flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-[0.72rem] font-bold tracking-wide text-slate-500 uppercase"
+                      style={{ width: LABEL_WIDTH }}
+                    >
+                      {item.label}
+                    </div>
+                    <div className="shrink-0 bg-slate-50" style={{ width: timelineWidth }} />
+                  </div>
+                );
+              }
+              const row = item.row;
+              if (row.kind === "job") {
+                const job = row.job;
+                const conflict = showAllocation && conflictJobIds.has(row.id);
+                const selected = selectedJobId === row.id;
+                return (
+                  <div key={row.id} className="flex">
+                    <div
+                      className={ui.cx(
+                        labelRowBase,
+                        "sticky left-0 z-10 shrink-0 cursor-pointer bg-white hover:bg-blue-50",
+                        conflict && "bg-red-50",
+                        selected && "bg-blue-100 ring-1 ring-inset ring-blue-400"
+                      )}
+                      style={{ width: LABEL_WIDTH }}
+                      onClick={() => {
+                        setSelectedJobId(job.id);
+                        onSelectJob?.(job);
+                      }}
+                    >
+                      <Cell col={COLS[0]}>{job.sourceOrderRefs ?? "—"}</Cell>
+                      <Cell col={COLS[1]}>{job.customerName ?? "—"}</Cell>
+                      <Cell col={COLS[2]}>{job.productName}</Cell>
+                      <Cell col={COLS[3]}>{job.qty.toLocaleString()}</Cell>
+                      <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
+                      <Cell col={COLS[5]}>{job.ship1Date ? new Date(job.ship1Date).toLocaleDateString(undefined, { day: "2-digit", month: "short" }) : "—"}</Cell>
+                    </div>
+                    <div className="shrink-0" style={{ width: timelineWidth }}>
+                      <ScheduleJobBar
+                        job={row.job}
+                        barLeft={barLeft}
+                        dayWidth={dayWidth}
+                        conflict={conflict}
+                        selected={selected}
+                        onDragCommit={onJobMoved ? (j, newStart) => onJobMoved(j.id, j.machineId, newStart) : undefined}
+                      />
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={row.id} className="flex">
+                  <div className={ui.cx(labelRowBase, "sticky left-0 z-10 shrink-0 cursor-default bg-white text-slate-500 italic")} style={{ width: LABEL_WIDTH }}>
+                    <Cell col={COLS[0]}>—</Cell>
+                    <Cell col={COLS[1]}>—</Cell>
+                    <Cell col={COLS[2]}>—</Cell>
+                    <Cell col={COLS[3]}>Stopped — {row.window.reason ?? row.window.type}</Cell>
+                    <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
+                    <Cell col={COLS[5]}>—</Cell>
+                  </div>
+                  <div className="relative shrink-0 border-b border-slate-200" style={{ width: timelineWidth, height: ROW_H }}>
                     <div
                       className="absolute flex items-center justify-center rounded-md text-[0.72rem] font-bold text-slate-900"
                       style={{
@@ -418,9 +433,9 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, onSelectJob, 
                       Stopped
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -433,12 +448,14 @@ function ScheduleJobBar({
   barLeft,
   dayWidth,
   conflict,
+  selected,
   onDragCommit,
 }: {
   job: ScheduleJob;
   barLeft: (iso: string) => number;
   dayWidth: number;
   conflict: boolean;
+  selected: boolean;
   onDragCommit?: (job: ScheduleJob, newBlockStart: Date) => void;
 }) {
   const [dragPx, setDragPx] = useState<number | null>(null);
@@ -486,12 +503,13 @@ function ScheduleJobBar({
   };
 
   return (
-    <div className={ui.cx("relative border-b border-slate-200", conflict && "bg-red-50")} style={{ height: ROW_H }}>
+    <div className={ui.cx("relative border-b border-slate-200", conflict && "bg-red-50", selected && "bg-blue-50")} style={{ height: ROW_H }}>
       <div
         className={ui.cx(
           "absolute flex overflow-hidden rounded-md shadow-sm",
           job.status === JobStatus.Done && "opacity-60",
           late && "ring-2 ring-red-600",
+          selected && "ring-2 ring-blue-600",
           draggable && "cursor-grab hover:ring-2 hover:ring-blue-600",
           dragPx !== null && "z-30 cursor-grabbing opacity-80 shadow-lg"
         )}
