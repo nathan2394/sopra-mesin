@@ -114,7 +114,7 @@ export function OrdersPage() {
   };
 
   const handleResetSampleData = () => {
-    if (window.confirm("Replace all orders with fresh sample data? This can't be undone.")) {
+    if (window.confirm("Replace all orders with fresh sample data? This can't be undone")) {
       resetSampleData();
     }
   };
