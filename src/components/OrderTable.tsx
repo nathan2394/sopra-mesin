@@ -1,22 +1,25 @@
 import { OrderSourceType, OrderStatus } from "../types";
 import type { Order } from "../types";
+import { formatDate } from "../utils/dateFormat";
 import { computeOrderTotals } from "../utils/orderMath";
+import { DataTable } from "../ui/DataTable";
 import { Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
 
-const STATUS_OPTIONS = Object.values(OrderStatus).map((s) => ({ value: s, label: s }));
+const STATUS_OPTIONS = Object.values(OrderStatus).map((status) => ({ value: status, label: status }));
+
+export type SortKey = "orderNo" | "customerName" | "customerPoNo" | "qty" | "deliveryDate" | "status";
 
 interface Props {
   orders: Order[];
-  onEdit: (order: Order) => void;
-  onDelete: (order: Order) => void;
   onStatusChange: (order: Order, status: OrderStatus) => void;
   sortKey: SortKey;
   sortDir: "asc" | "desc";
   onSort: (key: SortKey) => void;
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
 }
-
-export type SortKey = "orderNo" | "customerName" | "customerPoNo" | "qty" | "deliveryDate" | "status";
 
 const SOURCE_LABEL: Record<OrderSourceType, string> = {
   [OrderSourceType.SoPaid]: "SO Paid",
@@ -39,89 +42,25 @@ const STATUS_CLASS: Record<OrderStatus, string> = {
   [OrderStatus.Cancelled]: ui.statusCancelled,
 };
 
-function isOverdue(order: Order): boolean {
-  if (order.status === OrderStatus.Fulfilled || order.status === OrderStatus.Cancelled) return false;
-  return new Date(order.deliveryDate).getTime() < Date.now();
-}
+const sortableHeaderClass = "whitespace-nowrap text-2xs font-semibold uppercase tracking-[0.06em] hover:text-slate-600";
 
-function SortHeader({
-  label,
-  sortKeyValue,
-  sortKey,
-  sortDir,
-  onSort,
-}: {
-  label: string;
-  sortKeyValue: SortKey;
-  sortKey: SortKey;
-  sortDir: "asc" | "desc";
-  onSort: (key: SortKey) => void;
-}) {
-  const active = sortKey === sortKeyValue;
-  return (
-    <th className={ui.cx(ui.th, "cursor-pointer select-none hover:text-slate-600")} onClick={() => onSort(sortKeyValue)}>
-      {label}
-      {active ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
-    </th>
-  );
-}
-
-export function OrderTable({ orders, onEdit, onDelete, onStatusChange, sortKey, sortDir, onSort }: Props) {
-  if (orders.length === 0) {
-    return <p className={ui.cx(ui.muted, "p-5")}>No orders match your filters.</p>;
-  }
-
-  return (
-    <table className={ui.table}>
-      <thead>
-        <tr>
-          <th className={ui.th}>Source</th>
-          <SortHeader label="Order No." sortKeyValue="orderNo" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <SortHeader label="Customer" sortKeyValue="customerName" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <SortHeader label="Customer PO #" sortKeyValue="customerPoNo" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <th className={ui.th}>Items</th>
-          <SortHeader label="Total Qty" sortKeyValue="qty" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <SortHeader label="Delivery date" sortKeyValue="deliveryDate" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <SortHeader label="Status" sortKeyValue="status" sortKey={sortKey} sortDir={sortDir} onSort={onSort} />
-          <th className={ui.th}></th>
-        </tr>
-      </thead>
-      <tbody>
-        {orders.map((o) => {
-          const totals = computeOrderTotals(o.items);
-          const primaryDescription = o.items[0]?.description ?? "—";
-          const overdue = isOverdue(o);
-          return (
-            <tr key={o.id} className={overdue ? "bg-orange-50/60" : "hover:bg-slate-50"}>
-              <td className={ui.td}><span className={SOURCE_CLASS[o.sourceType]}>{SOURCE_LABEL[o.sourceType]}</span></td>
-              <td className={ui.td}>{o.orderNo}</td>
-              <td className={ui.td}>{o.customerName || "—"}</td>
-              <td className={ui.td}>{o.customerPoNo || "—"}</td>
-              <td className={ui.td}>
-                {primaryDescription}
-                {o.items.length > 1 ? <span className={ui.muted}> +{o.items.length - 1} more</span> : null}
-              </td>
-              <td className={ui.td}>{totals.qty.toLocaleString()}</td>
-              <td className={ui.cx(ui.td, overdue && ui.textDanger)}>
-                {new Date(o.deliveryDate).toLocaleDateString()}
-                {overdue ? " · overdue" : ""}
-              </td>
-              <td className={ui.td}>
-                <Select
-                  value={o.status}
-                  onChange={(v) => onStatusChange(o, v as OrderStatus)}
-                  options={STATUS_OPTIONS}
-                  buttonClassName={ui.cx(STATUS_CLASS[o.status], "relative inline-flex cursor-pointer items-center pr-6")}
-                />
-              </td>
-              <td className={ui.cx(ui.td, "text-right whitespace-nowrap")}>
-                <button className={ui.btnLink} onClick={() => onEdit(o)}>Edit</button>
-                <button className={ui.btnLinkDanger} onClick={() => onDelete(o)}>Delete</button>
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
-  );
+export function OrderTable({ orders, onStatusChange, sortKey, sortDir, onSort, pagination, onPageChange, isLoading }: Props) {
+  return <DataTable
+    rows={orders}
+    rowKey={(order) => order.id}
+    emptyText="No orders match your filters."
+    isLoading={isLoading}
+    rowClassName={(order) => order.status !== OrderStatus.Fulfilled && order.status !== OrderStatus.Cancelled && new Date(order.deliveryDate).getTime() < Date.now() ? "bg-orange-50/60" : "hover:bg-slate-50"}
+    columns={[
+      { key: "source", header: "Source", cell: (order) => <span className={SOURCE_CLASS[order.sourceType]}>{SOURCE_LABEL[order.sourceType]}</span> },
+      { key: "orderNo", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("orderNo")}>Order No.{sortKey === "orderNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.orderNo },
+      { key: "customer", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerName")}>Customer{sortKey === "customerName" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerName || "-" },
+      { key: "po", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerPoNo")}>Customer PO #{sortKey === "customerPoNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerPoNo || "-" },
+      { key: "items", header: "Items", cell: (order) => <>{order.items[0]?.description ?? "-"}{order.items.length > 1 && <span className={ui.muted}> +{order.items.length - 1} more</span>}</> },
+      { key: "qty", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("qty")}>Total Qty{sortKey === "qty" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => computeOrderTotals(order.items).qty.toLocaleString() },
+      { key: "delivery", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("deliveryDate")}>Delivery date{sortKey === "deliveryDate" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => { const overdue = order.status !== OrderStatus.Fulfilled && order.status !== OrderStatus.Cancelled && new Date(order.deliveryDate).getTime() < Date.now(); return <span className={overdue ? ui.textDanger : ""}>{formatDate(order.deliveryDate)}{overdue ? " - overdue" : ""}</span>; } },
+      { key: "status", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("status")}>Status{sortKey === "status" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => <Select value={order.status} onChange={(value) => onStatusChange(order, value as OrderStatus)} options={STATUS_OPTIONS} buttonClassName={ui.cx(STATUS_CLASS[order.status], "relative inline-flex cursor-pointer items-center pr-6")} /> },
+    ]}
+    pagination={{ ...pagination, onPageChange, label: "Orders" }}
+  />;
 }

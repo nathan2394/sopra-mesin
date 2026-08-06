@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
+import { api } from "../api/client";
+import type { PagedResult } from "../api/client";
 import { OrderSourceType, OrderStatus } from "../types";
 import type { Order, OrderDraft, OrderLineItem } from "../types";
 import { computeOrderTotals, computeLeadTimeDays } from "../utils/orderMath";
 import { Modal } from "../ui/Modal";
 import { Select } from "../ui/Select";
+import { DataTable } from "../ui/DataTable";
 import * as ui from "../ui/classNames";
 
 interface Props {
@@ -14,6 +17,7 @@ interface Props {
 }
 
 type Tab = "order" | "production" | "delivery";
+type MachineOption = { id: number; lineCode: string; name: string; isActive: boolean };
 
 const SOURCE_LABEL: Record<OrderSourceType, string> = {
   [OrderSourceType.SoPaid]: "SO — Paid",
@@ -65,6 +69,7 @@ function emptyDraft(): OrderDraft {
 
 export function OrderForm({ initial, onSave, onCancel }: Props) {
   const [draft, setDraft] = useState<OrderDraft>(initial ?? emptyDraft());
+  const [machines, setMachines] = useState<MachineOption[]>([]);
   const [tab, setTab] = useState<Tab>("order");
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +77,12 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
     setDraft(initial ?? emptyDraft());
     setTab("order");
   }, [initial]);
+
+  useEffect(() => {
+    void api<PagedResult<MachineOption>>("/machines?page=1&pageSize=100")
+      .then((result) => setMachines(result.items.filter((machine) => machine.isActive)))
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Failed to load machines"));
+  }, []);
 
   const totals = computeOrderTotals(draft.items);
   const leadTime = computeLeadTimeDays(draft);
@@ -102,6 +113,12 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
       setTab("order");
       return;
     }
+    if ((draft.prodScheduleStart || draft.prodScheduleEnd) &&
+        (!draft.prodScheduleStart || !draft.prodScheduleEnd || !draft.scheduleMachineId)) {
+      setError("Production start, end, and machine are required together.");
+      setTab("production");
+      return;
+    }
     setError(null);
     onSave(draft);
   };
@@ -118,7 +135,7 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
 
   return (
     <Modal onClose={onCancel} onSubmit={handleSubmit} wide>
-      <h2 className="mb-1 text-[1.15rem]">{initial ? `Edit order · ${draft.orderNo}` : "New customer order"}</h2>
+      <h2 className="mb-1 text-xl font-bold tracking-tight text-slate-900">{initial ? `Edit order · ${draft.orderNo}` : "New customer order"}</h2>
 
       <div className="grid grid-cols-3 gap-x-3.5 gap-y-2.5">
         <label className={ui.label}>
@@ -157,17 +174,17 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
       </div>
 
       <div className="flex flex-wrap gap-2.5 rounded-md border border-slate-200 bg-slate-50 p-3.5">
-        <div className="flex min-w-[100px] flex-col gap-0.5">
-          <span className="text-[1.05rem] font-bold text-slate-800">{totals.qty.toLocaleString()}</span>
-          <span className="text-[0.72rem] text-slate-500">Total Qty (pcs)</span>
+        <div className="flex min-w-25 flex-col gap-0.5">
+          <span className="text-lg font-bold leading-none text-slate-800 tabular-nums">{totals.qty.toLocaleString()}</span>
+          <span className="text-2xs text-slate-500">Total Qty (pcs)</span>
         </div>
-        <div className="flex min-w-[100px] flex-col gap-0.5">
-          <span className="text-[1.05rem] font-bold text-slate-800">{totals.workHours}</span>
-          <span className="text-[0.72rem] text-slate-500">Total Work Hour</span>
+        <div className="flex min-w-25 flex-col gap-0.5">
+          <span className="text-lg font-bold leading-none text-slate-800 tabular-nums">{totals.workHours}</span>
+          <span className="text-2xs text-slate-500">Total Work Hour</span>
         </div>
-        <div className="flex min-w-[100px] flex-col gap-0.5">
-          <span className="text-[1.05rem] font-bold text-slate-800">{leadTime}</span>
-          <span className="text-[0.72rem] text-slate-500">Lead Time (days)</span>
+        <div className="flex min-w-25 flex-col gap-0.5">
+          <span className="text-lg font-bold leading-none text-slate-800 tabular-nums">{leadTime}</span>
+          <span className="text-2xs text-slate-500">Lead Time (days)</span>
         </div>
       </div>
 
@@ -182,44 +199,27 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
           <div className="mb-2 flex justify-end">
             <button type="button" className={ui.btnSecondary} onClick={addItem}><Plus size={14} /> Add item</button>
           </div>
-          <div className="overflow-x-auto rounded-md border border-slate-200">
-            <table className={ui.cx(ui.table, "min-w-[760px]")}>
-              <thead>
-                <tr>
-                  <th className={ui.th}>Description</th>
-                  <th className={ui.th}>Qty</th>
-                  <th className={ui.th}>FOB</th>
-                  <th className={ui.th}>MP</th>
-                  <th className={ui.th}>Carton</th>
-                  <th className={ui.th}>CBM</th>
-                  <th className={ui.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {draft.items.map((it) => (
-                  <tr key={it.id}>
-                    <td className={ui.td}><input className={ui.inputSm} value={it.description} onChange={(e) => patchItem(it.id, { description: e.target.value })} /></td>
-                    <td className={ui.td}><input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={it.qty} onChange={(e) => patchItem(it.id, { qty: Number(e.target.value) })} /></td>
-                    <td className={ui.td}><input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} step={0.01} value={it.fob} onChange={(e) => patchItem(it.id, { fob: Number(e.target.value) })} /></td>
-                    <td className={ui.td}><input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={it.mp ?? ""} onChange={(e) => patchItem(it.id, { mp: e.target.value ? Number(e.target.value) : undefined })} /></td>
-                    <td className={ui.td}><input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={it.carton ?? ""} onChange={(e) => patchItem(it.id, { carton: e.target.value ? Number(e.target.value) : undefined })} /></td>
-                    <td className={ui.td}><input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} step={0.001} value={it.cbm ?? ""} onChange={(e) => patchItem(it.id, { cbm: e.target.value ? Number(e.target.value) : undefined })} /></td>
-                    <td className={ui.td}>
-                      <button type="button" className={ui.btnLinkDanger} onClick={() => removeItem(it.id)} disabled={draft.items.length <= 1}>
-                        <Trash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            rows={draft.items}
+            rowKey={(item) => item.id}
+            containerClassName="overflow-hidden rounded-md border border-slate-200"
+            tableClassName="min-w-[760px]"
+            columns={[
+              { key: "description", header: "Description", cell: (item) => <input className={ui.inputSm} value={item.description} onChange={(event) => patchItem(item.id, { description: event.target.value })} /> },
+              { key: "qty", header: "Qty", cell: (item) => <input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={item.qty} onChange={(event) => patchItem(item.id, { qty: Number(event.target.value) })} /> },
+              { key: "fob", header: "FOB", cell: (item) => <input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} step={0.01} value={item.fob} onChange={(event) => patchItem(item.id, { fob: Number(event.target.value) })} /> },
+              { key: "mp", header: "MP", cell: (item) => <input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={item.mp ?? ""} onChange={(event) => patchItem(item.id, { mp: event.target.value ? Number(event.target.value) : undefined })} /> },
+              { key: "carton", header: "Carton", cell: (item) => <input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} value={item.carton ?? ""} onChange={(event) => patchItem(item.id, { carton: event.target.value ? Number(event.target.value) : undefined })} /> },
+              { key: "cbm", header: "CBM", cell: (item) => <input className={ui.cx(ui.inputSm, "w-16 text-right")} type="number" min={0} step={0.001} value={item.cbm ?? ""} onChange={(event) => patchItem(item.id, { cbm: event.target.value ? Number(event.target.value) : undefined })} /> },
+              { key: "actions", header: "", cell: (item) => <button type="button" className={ui.btnLinkDanger} onClick={() => removeItem(item.id)} disabled={draft.items.length <= 1}><Trash2 size={14} /></button> },
+            ]}
+          />
         </div>
       )}
 
       {tab === "production" && (
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <label className={ui.label}>
               Prod. Schedule Start
               <input className={ui.input} type="date" value={toDateInputValue(draft.prodScheduleStart)} onChange={(e) => patch({ prodScheduleStart: e.target.value ? new Date(e.target.value).toISOString() : undefined })} />
@@ -228,10 +228,23 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
               Prod. Schedule End
               <input className={ui.input} type="date" value={toDateInputValue(draft.prodScheduleEnd)} onChange={(e) => patch({ prodScheduleEnd: e.target.value ? new Date(e.target.value).toISOString() : undefined })} />
             </label>
+            <label className={ui.label}>
+              Machine
+              <Select
+                value={draft.scheduleMachineId ?? ""}
+                onChange={(value) => patch({ scheduleMachineId: value || undefined })}
+                options={[
+                  { value: "", label: "Select machine" },
+                  ...machines.map((machine) => ({
+                    value: String(machine.id),
+                    label: `${machine.lineCode} — ${machine.name}`,
+                  })),
+                ]}
+              />
+            </label>
           </div>
           <p className={ui.muted}>
-            Once this order is planned onto the Production Schedule, its jobs will show against machine "
-            {draft.orderNo || "—"}" with the setup, run and milestone detail tracked there.
+            Saving with a production window and machine creates the job on the Production Schedule.
           </p>
         </div>
       )}

@@ -204,9 +204,9 @@ export function createSampleMaintenanceWindows(machines: Machine[]): Maintenance
   const windows: MaintenanceWindow[] = [];
   // A couple of realistic downtime blocks on different machines.
   const plans: Array<{ machineIndex: number; startHour: number; durationHours: number; type: MaintenanceType; reason: string }> = [
-    { machineIndex: 1, startHour: 30, durationHours: 8, type: MaintenanceType.Planned, reason: "Scheduled mold cleaning" },
-    { machineIndex: 4, startHour: 60, durationHours: 12, type: MaintenanceType.Planned, reason: "Preventive maintenance" },
-    { machineIndex: 6, startHour: 6, durationHours: 4, type: MaintenanceType.Unplanned, reason: "Hydraulic leak repair" },
+    { machineIndex: 1, startHour: 30, durationHours: 8, type: MaintenanceType.Setup, reason: "Scheduled mold cleaning" },
+    { machineIndex: 4, startHour: 60, durationHours: 12, type: MaintenanceType.Preventive, reason: "Preventive maintenance" },
+    { machineIndex: 6, startHour: 6, durationHours: 4, type: MaintenanceType.Corrective, reason: "Hydraulic leak repair" },
   ];
 
   plans.forEach(({ machineIndex, startHour, durationHours, type, reason }) => {
@@ -221,6 +221,7 @@ export function createSampleMaintenanceWindows(machines: Machine[]): Maintenance
       endAt: end.toISOString(),
       type,
       reason,
+      scheduleType: "One Time",
     });
   });
 
@@ -240,7 +241,7 @@ export function createSampleScheduleJobs(machines: Machine[]): ScheduleJob[] {
 
   activeMachines.forEach((machine, mi) => {
     let cursor = 0;
-    const jobCount = 2 + (mi % 3); // 2-4 jobs per machine
+    const jobCount = 3 + (mi % 3) + (mi === 0 ? 1 : 0); // 3-5 jobs per machine, first machine gets one extra
     for (let j = 0; j < jobCount; j++) {
       // Changeover: 0 if this job happens to reuse the same tooling as the last one on
       // this machine (every 3rd job, for variety), otherwise a realistic 30-90 min swap.
@@ -256,6 +257,7 @@ export function createSampleScheduleJobs(machines: Machine[]): ScheduleJob[] {
       jobs.push({
         id: uid(),
         machineId: machine.id,
+        isLocked: false,
         productName: item.description,
         qty: item.qty,
         startAt: start.toISOString(),
@@ -263,7 +265,7 @@ export function createSampleScheduleJobs(machines: Machine[]): ScheduleJob[] {
         setupMinutes,
         deliveryDate: order.deliveryDate,
         sourceOrderRefs: order.orderNo,
-        status: cursor === 0 ? JobStatus.InProgress : JobStatus.Planned,
+        status: cursor === 0 ? JobStatus.ProductionProgress : JobStatus.Open,
         customerName: order.customerName,
         profile: pick(PROFILES, idx),
         itemCode: `4${String(50100000 + idx).padStart(8, "0")}`,

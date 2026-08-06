@@ -7,7 +7,6 @@ interface Props {
   children: ReactNode;
 }
 
-/** Shared modal shell (backdrop + rounded panel) used by every create/edit form dialog. */
 export function Modal({ onClose, onSubmit, wide, children }: Props) {
   return (
     <div
@@ -15,7 +14,7 @@ export function Modal({ onClose, onSubmit, wide, children }: Props) {
       onMouseDown={onClose}
     >
       <form
-        className={`flex w-full flex-col gap-3 rounded-2xl bg-white p-6 shadow-2xl ${wide ? "max-w-[1080px]" : "max-w-[480px]"}`}
+        className={`flex w-full flex-col gap-3 rounded-lg bg-white p-6 shadow-2xl ${wide ? "max-w-[1080px]" : "max-w-[480px]"}`}
         onMouseDown={(e) => e.stopPropagation()}
         onSubmit={onSubmit}
       >

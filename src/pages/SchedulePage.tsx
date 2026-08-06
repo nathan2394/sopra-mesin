@@ -1,81 +1,158 @@
 import { useMemo, useState } from "react";
-import { useProduction } from "../hooks/useProduction";
-import { useOrders } from "../hooks/useOrders";
-import { ScheduleGrid } from "../components/ScheduleGrid";
+import { WandSparkles, X } from "lucide-react";
 import { PageHeader } from "../components/PageHeader";
+import { ScheduleDetailDrawer } from "../components/ScheduleDetailDrawer";
+import { ScheduleGrid } from "../components/ScheduleGrid";
+import { useOrders } from "../hooks/useOrders";
+import { useProduction } from "../hooks/useProduction";
+import { JobStatus } from "../types";
+import { formatDateTime } from "../utils/dateFormat";
 import { StatsRow, StatCard } from "../ui/StatCard";
-import { Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
-import { JobStatus, OrderStatus } from "../types";
-import type { ScheduleJob } from "../types";
 
-const JOB_STATUS_CLASS: Record<string, string> = {
-  [JobStatus.Planned]: ui.statusPlanned,
-  [JobStatus.InProgress]: ui.statusInProgress,
-  [JobStatus.Done]: ui.statusDone,
-};
+interface MoveNotice {
+  jobId: string;
+  machineId: string;
+  previousStart: Date;
+  startAt: Date;
+  durationMs: number;
+  editing: boolean;
+  editDate: string;
+  editTime: string;
+}
 
-const JOB_STATUS_OPTIONS = Object.values(JobStatus).map((s) => ({ value: s, label: s }));
-
-const ORDER_STATUS_CLASS: Record<string, string> = {
-  [OrderStatus.Open]: ui.statusOpen,
-  [OrderStatus.Confirmed]: ui.statusConfirmed,
-  [OrderStatus.Final]: ui.statusConfirmed,
-  [OrderStatus.InProduction]: ui.statusInProduction,
-  [OrderStatus.Fulfilled]: ui.statusFulfilled,
-  [OrderStatus.Cancelled]: ui.statusCancelled,
-};
+const inputDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+const inputTime = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+const displayDateTime = (date: Date) => formatDateTime(date);
 
 export function SchedulePage() {
-  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, removeJob, resetSampleData } =
-    useProduction();
-  const { orders } = useOrders();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekStart = useMemo(() => {
+    const value = new Date();
+    value.setHours(0, 0, 0, 0);
+    value.setDate(value.getDate() + weekOffset * 7);
+    return value;
+  }, [weekOffset]);
+  const weekEnd = useMemo(() => {
+    const value = new Date(weekStart);
+    value.setDate(value.getDate() + 7);
+    return value;
+  }, [weekStart]);
+  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, addCorrectiveMaintenance, isLoading } = useProduction(1, 100, 1, 100, {}, {
+    scheduleStartAt: weekStart,
+    scheduleEndAt: weekEnd,
+  });
+  const { orders } = useOrders(1, 100, "", "", "", true);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | null>(null);
+  const [moveNotice, setMoveNotice] = useState<MoveNotice | null>(null);
 
-  const selectedJob = scheduleJobs.find((j) => j.id === selectedJobId) ?? null;
-  const selectedMachine = selectedJob ? machines.find((m) => m.id === selectedJob.machineId) : null;
+  const selectedJob = scheduleJobs.find((job) => job.id === selectedJobId) ?? null;
+  const selectedMaintenance = maintenanceWindows.find((window) => window.id === selectedMaintenanceId) ?? null;
+  const selectedMachine = machines.find((machine) => machine.id === (selectedJob?.machineId ?? selectedMaintenance?.machineId));
   const selectedOrder = selectedJob?.sourceOrderRefs
-    ? (orders.find((o) => o.orderNo === selectedJob.sourceOrderRefs) ?? null)
-    : null;
+    ? orders.find((order) => order.orderNo === selectedJob.sourceOrderRefs)
+    : undefined;
 
   const stats = useMemo(() => {
-    const active = machines.filter((m) => m.isActive).length;
-    const inProgress = scheduleJobs.filter((j) => j.status === JobStatus.InProgress).length;
-    const overdue = scheduleJobs.filter(
-      (j) => j.status !== JobStatus.Done && new Date(j.endAt).getTime() > new Date(j.deliveryDate).getTime()
-    ).length;
+    const active = machines.filter((machine) => machine.isActive).length;
+    const inProgress = scheduleJobs.filter((job) => job.status === JobStatus.ProductionProgress).length;
+    const overdue = scheduleJobs.filter((job) => job.status !== JobStatus.ProductionComplete && new Date(job.endAt).getTime() > new Date(job.deliveryDate).getTime()).length;
     return { active, total: machines.length, inProgress, overdue, jobs: scheduleJobs.length };
   }, [machines, scheduleJobs]);
 
-  const handleJobMoved = (jobId: string, machineId: string, newBlockStart: Date) => {
-    moveJob(jobId, machineId, newBlockStart);
+  const openOptimizePayload = () => {
+    const optimizable = orders.flatMap((order) => {
+      const job = scheduleJobs.find((row) => row.id === order.scheduleId || row.sourceOrderRefs?.split(", ").includes(order.orderNo));
+      if (job && (job.isLocked || job.status !== JobStatus.Open)) return [];
+      const item = order.items[0];
+      return [{
+        orderId: Number(order.id),
+        orderNumber: order.orderNo,
+        itemId: item ? Number(item.id) : null,
+        source: order.sourceType,
+        scheduleId: job?.id ?? null,
+        machineId: job?.machineId ?? null,
+        itemName: job?.productName ?? item?.description ?? null,
+        quantity: job?.qty ?? order.items.reduce((total, row) => total + row.qty, 0),
+        durationMinutes: job ? Math.round((new Date(job.endAt).getTime() - new Date(job.startAt).getTime()) / 60_000) : null,
+        deliveryDate: order.deliveryDate,
+        status: job?.status ?? JobStatus.Open,
+        startAt: job?.startAt ?? null,
+        endAt: job?.endAt ?? null,
+      }];
+    });
+    const payload = {
+      machines: machines.filter((machine) => machine.isActive).map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
+      orders: optimizable,
+      blockedSlots: scheduleJobs.filter((job) =>
+        job.status !== JobStatus.ProductionComplete &&
+        (job.isLocked || job.status === JobStatus.ProductionProgress || job.status === JobStatus.ProductionPending)
+      ).map((job) => {
+        const order = orders.find((row) => row.scheduleId === job.id || job.sourceOrderRefs?.split(", ").includes(row.orderNo));
+        return {
+          scheduleId: job.id,
+          orderId: order ? Number(order.id) : null,
+          machineId: job.machineId,
+          startAt: job.startAt,
+          endAt: job.endAt,
+          status: job.status,
+        };
+      }),
+      maintenance: maintenanceWindows.filter((window) => new Date(window.endAt).getTime() > Date.now()).map((window) => ({
+        maintenanceId: window.id,
+        machineId: window.machineId,
+        startAt: window.startAt,
+        endAt: window.endAt,
+        status: "Routine Maintenance",
+        type: window.type,
+        frequency: window.scheduleType === "One Time" ? "One Time" : window.repeatType,
+        reason: window.reason,
+      })),
+    };
+    const tab = window.open("", "_blank");
+    if (!tab) return window.alert("Popup diblokir. Izinkan popup untuk melihat payload optimize.");
+    tab.opener = null;
+    tab.document.title = "Optimize Schedule API Payload";
+    tab.document.body.style.cssText = "margin:0;padding:24px;background:#0f172a;color:#e2e8f0;font:13px/1.6 ui-monospace,monospace";
+    const pre = tab.document.createElement("pre");
+    pre.textContent = JSON.stringify(payload, null, 2);
+    tab.document.body.append(pre);
   };
 
-  const handleStatusChange = (job: ScheduleJob, status: (typeof JobStatus)[keyof typeof JobStatus]) => {
-    updateJob(job.id, { status });
-  };
-
-  const handleDelete = (job: ScheduleJob) => {
-    if (window.confirm(`Remove "${job.productName}" from the schedule?`)) {
-      removeJob(job.id);
-      setSelectedJobId(null);
+  const handleJobMoved = async (jobId: string, machineId: string, droppedStart: Date) => {
+    const job = scheduleJobs.find((row) => row.id === jobId);
+    if (!job) return;
+    const durationMs = new Date(job.endAt).getTime() - new Date(job.startAt).getTime();
+    let startAt = droppedStart;
+    if (startAt.getTime() + durationMs <= Date.now()) {
+      const halfHour = 30 * 60_000;
+      startAt = new Date(Math.ceil((Date.now() + halfHour) / halfHour) * halfHour);
     }
+    if (!await moveJob(jobId, machineId, startAt)) return;
+    setMoveNotice({
+      jobId,
+      machineId,
+      previousStart: new Date(job.startAt),
+      startAt,
+      durationMs,
+      editing: false,
+      editDate: inputDate(startAt),
+      editTime: inputTime(startAt),
+    });
   };
 
-  const handleReset = () => {
-    if (window.confirm("Replace machines, maintenance windows and the schedule with fresh sample data?")) {
-      resetSampleData();
-      setSelectedJobId(null);
-    }
-  };
+  const editedStart = moveNotice ? new Date(`${moveNotice.editDate}T${moveNotice.editTime}:00`) : undefined;
+  const editedEnd = editedStart && moveNotice && !Number.isNaN(editedStart.getTime()) ? new Date(editedStart.getTime() + moveNotice.durationMs) : undefined;
+  const invalidEdit = !editedEnd || editedEnd.getTime() <= Date.now();
 
   return (
     <div className={ui.page}>
       <PageHeader
-        breadcrumb={["Production", "Schedule"]}
+        breadcrumb={[]}
         title="Production Schedule"
-        subtitle="Drag a bar to reschedule — later jobs on that cell shift automatically. Click a row for job detail, or use Allocation to spot overlaps."
-        actions={<button className={ui.btnSecondary} onClick={handleReset}>Reset sample data</button>}
+        subtitle="Drag a bar to reschedule later jobs on that cell automatically. Click a row for job detail, or use Allocation to spot overlaps."
+        actions={<button type="button" onClick={openOptimizePayload} className={ui.btnSecondary}><WandSparkles size={14} />Optimize Schedule</button>}
       />
 
       <StatsRow>
@@ -89,91 +166,67 @@ export function SchedulePage() {
         machines={machines}
         jobs={scheduleJobs}
         maintenanceWindows={maintenanceWindows}
-        onSelectJob={(job) => setSelectedJobId(job.id)}
+        weekStart={weekStart}
+        weekEnd={weekEnd}
+        onWeekOffsetChange={setWeekOffset}
+        isLoading={isLoading}
+        onSelectJob={(job) => { setSelectedMaintenanceId(null); setSelectedJobId(job.id); }}
+        onSelectMaintenance={(window) => { setSelectedJobId(null); setSelectedMaintenanceId(window.id); }}
         onJobMoved={handleJobMoved}
       />
 
-      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className={ui.card}>
-          <h2 className="mb-1.5 text-[1.05rem]">Job detail{selectedJob ? `: ${selectedJob.productName}` : ""}</h2>
-          {!selectedJob && <p className={ui.muted}>Click a bar on the Gantt to see its details.</p>}
-          {selectedJob && (
-            <>
-              <table className={ui.table}>
-                <tbody>
-                  <tr><td className={ui.td}>Machine</td><td className={ui.td}>{selectedMachine?.lineCode ?? "—"}</td></tr>
-                  <tr><td className={ui.td}>Qty</td><td className={ui.td}>{selectedJob.qty.toLocaleString()} pcs</td></tr>
-                  {selectedJob.setupMinutes > 0 && (
-                    <tr><td className={ui.td}>Setup / changeover</td><td className={ui.td}>{selectedJob.setupMinutes} min</td></tr>
-                  )}
-                  <tr>
-                    <td className={ui.td}>Window</td>
-                    <td className={ui.td}>{new Date(selectedJob.startAt).toLocaleDateString()} → {new Date(selectedJob.endAt).toLocaleDateString()}</td>
-                  </tr>
-                  <tr>
-                    <td className={ui.td}>Delivery due</td>
-                    <td className={ui.cx(ui.td, new Date(selectedJob.endAt) > new Date(selectedJob.deliveryDate) && ui.textDanger)}>
-                      {new Date(selectedJob.deliveryDate).toLocaleDateString()}
-                    </td>
-                  </tr>
-                  {selectedJob.sourceOrderRefs && (
-                    <>
-                      <tr><td className={ui.td}>Order ref</td><td className={ui.td}>{selectedJob.sourceOrderRefs}</td></tr>
-                      <tr>
-                        <td className={ui.td}>Sales order status</td>
-                        <td className={ui.td}>
-                          {selectedOrder ? (
-                            <span className={ORDER_STATUS_CLASS[selectedOrder.status]}>{selectedOrder.status}</span>
-                          ) : (
-                            <span className={ui.muted}>Order not found</span>
-                          )}
-                        </td>
-                      </tr>
-                    </>
-                  )}
-                  <tr>
-                    <td className={ui.td}>Job status</td>
-                    <td className={ui.td}>
-                      <Select
-                        value={selectedJob.status}
-                        onChange={(v) => handleStatusChange(selectedJob, v as ScheduleJob["status"])}
-                        options={JOB_STATUS_OPTIONS}
-                        buttonClassName={ui.cx(JOB_STATUS_CLASS[selectedJob.status], "relative inline cursor-pointer items-center pr-20 text-center")}
-                      />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-              <div className="mt-3 flex justify-start">
-                <button className={ui.btnLinkDanger} onClick={() => handleDelete(selectedJob)}>
-                  Remove job
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+      {(selectedJob || selectedMaintenance) && (
+        <ScheduleDetailDrawer
+          key={selectedJob ? `job-${selectedJob.id}` : `maintenance-${selectedMaintenance?.id}`}
+          job={selectedJob ?? undefined}
+          maintenance={selectedMaintenance ?? undefined}
+          machine={selectedMachine}
+          orderRef={selectedOrder?.customerPoNo}
+          onSave={selectedJob ? async ({ isLocked, startAt, endAt, correctiveMaintenance }) => {
+            if (isLocked !== selectedJob.isLocked || startAt || endAt) {
+              await updateJob(selectedJob.id, {
+                isLocked,
+                startAt: startAt ?? selectedJob.startAt,
+                endAt: endAt ?? selectedJob.endAt,
+              });
+            }
+            if (correctiveMaintenance) await addCorrectiveMaintenance(selectedJob.id, correctiveMaintenance.reason, correctiveMaintenance.estimatedHours);
+          } : undefined}
+          onClose={() => { setSelectedJobId(null); setSelectedMaintenanceId(null); }}
+        />
+      )}
 
-        <div className={ui.card}>
-          <h2 className="mb-2.5 text-[1.05rem]">Running now</h2>
-          {scheduleJobs.filter((j) => j.status === JobStatus.InProgress).length === 0 && (
-            <p className={ui.muted}>No jobs currently in progress.</p>
+      {moveNotice && (
+        <aside aria-live="polite" className="fixed bottom-5 right-5 z-50 w-[340px] rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-950">Schedule dipindahkan</p>
+              <p className="mt-1 text-xs text-slate-500">{displayDateTime(moveNotice.startAt)} - {inputTime(new Date(moveNotice.startAt.getTime() + moveNotice.durationMs))} WIB</p>
+            </div>
+            <button type="button" aria-label="Close notification" onClick={() => setMoveNotice(null)} className="rounded p-1 text-slate-400 hover:bg-slate-100"><X size={15} /></button>
+          </div>
+          {moveNotice.editing && (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input aria-label="New start date" type="date" value={moveNotice.editDate} onChange={(event) => setMoveNotice({ ...moveNotice, editDate: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
+              <input aria-label="New start time" type="time" value={moveNotice.editTime} onChange={(event) => setMoveNotice({ ...moveNotice, editTime: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
+              {invalidEdit && <p role="alert" className="col-span-2 text-xs text-red-600">End production harus setelah waktu sekarang.</p>}
+            </div>
           )}
-          <table className={ui.table}>
-            <thead><tr><th className={ui.th}>Machine</th><th className={ui.th}>Product</th><th className={ui.th}>Qty</th></tr></thead>
-            <tbody>
-              {scheduleJobs
-                .filter((j) => j.status === JobStatus.InProgress)
-                .map((j) => (
-                  <tr key={j.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setSelectedJobId(j.id)}>
-                    <td className={ui.td}>{machines.find((m) => m.id === j.machineId)?.lineCode ?? "—"}</td>
-                    <td className={ui.td}>{j.productName}</td>
-                    <td className={ui.td}>{j.qty.toLocaleString()}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          <div className="mt-3 flex gap-2">
+            <button type="button" className="text-xs font-semibold text-slate-600 hover:text-slate-950" onClick={async () => {
+              if (await moveJob(moveNotice.jobId, moveNotice.machineId, moveNotice.previousStart)) setMoveNotice(null);
+            }}>Undo</button>
+            {moveNotice.editing ? (
+              <button type="button" disabled={invalidEdit} className="text-xs font-semibold text-blue-600 disabled:text-slate-300" onClick={async () => {
+                if (!editedStart || !await moveJob(moveNotice.jobId, moveNotice.machineId, editedStart)) return;
+                setMoveNotice({ ...moveNotice, startAt: editedStart, editing: false });
+              }}>Save time</button>
+            ) : (
+              <button type="button" className="text-xs font-semibold text-blue-600" onClick={() => setMoveNotice({ ...moveNotice, editing: true })}>Edit time</button>
+            )}
+          </div>
+        </aside>
+      )}
     </div>
   );
 }
