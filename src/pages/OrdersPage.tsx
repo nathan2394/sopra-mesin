@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOrders } from "../hooks/useOrders";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { OrderTable, type SortKey } from "../components/OrderTable";
 import { PageHeader } from "../components/PageHeader";
 import { OrderSourceType, OrderStatus } from "../types";
@@ -20,15 +21,18 @@ export function OrdersPage() {
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<OrderSourceType | "All">("All");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "All">("All");
+  const [sortKey, setSortKey] = useState<SortKey>("deliveryDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const searchQuery = useDebouncedValue(search.trim());
   const { orders, pagination, updateOrder, isLoading } = useOrders(
     page,
     15,
-    search.trim(),
-    sourceFilter === "All" ? "" : SOURCE_LABEL[sourceFilter],
+    searchQuery,
+    sourceFilter === "All" ? "" : sourceFilter,
     statusFilter === "All" ? "" : statusFilter,
+    sortKey,
+    sortDir,
   );
-  const [sortKey, setSortKey] = useState<SortKey>("deliveryDate");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
   useEffect(() => {
     if (pagination.totalPages > 0 && page > pagination.totalPages) {
@@ -50,26 +54,10 @@ export function OrdersPage() {
     };
   }, [orders, pagination.totalItems]);
 
-  const visibleOrders = useMemo(() => {
-    const sorted = [...orders].sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "orderNo": cmp = a.orderNo.localeCompare(b.orderNo); break;
-        case "customerName": cmp = a.customerName.localeCompare(b.customerName); break;
-        case "customerPoNo": cmp = a.customerPoNo.localeCompare(b.customerPoNo); break;
-        case "qty": cmp = computeOrderTotals(a.items).qty - computeOrderTotals(b.items).qty; break;
-        case "deliveryDate": cmp = new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime(); break;
-        case "status": cmp = a.status.localeCompare(b.status); break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-
-    return sorted;
-  }, [orders, sortKey, sortDir]);
-
   const handleSort = (key: SortKey) => {
+    setPage(1);
     if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setSortDir((direction) => (direction === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
       setSortDir("asc");
@@ -130,11 +118,11 @@ export function OrdersPage() {
             ...Object.values(OrderStatus).map((s) => ({ value: s, label: s })),
           ]}
         />
-        <span className={ui.muted}>{visibleOrders.length} of {pagination.totalItems} shown</span>
+        <span className={ui.muted}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
 
       <OrderTable
-        orders={visibleOrders}
+        orders={orders}
         onStatusChange={handleStatusChange}
         sortKey={sortKey}
         sortDir={sortDir}

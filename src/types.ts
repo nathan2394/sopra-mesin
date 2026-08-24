@@ -25,8 +25,6 @@ export interface OrderLineItem {
   cbm?: number;
 }
 
-export type OrderLineItemDraft = Omit<OrderLineItem, "id">;
-
 export interface Order {
   id: string;
   sourceType: OrderSourceType;
@@ -50,13 +48,6 @@ export interface Order {
 }
 
 export type OrderDraft = Omit<Order, "id" | "createdAt" | "updatedAt">;
-
-export const MachineType = {
-  Aoki: "AOKI",
-  Asb: "ASB",
-  Dexter: "Dexter",
-} as const;
-export type MachineType = (typeof MachineType)[keyof typeof MachineType];
 
 export interface Machine {
   id: string;

@@ -2,14 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { api } from "../api/client";
 import { Drawer } from "../components/Drawer";
+import { notify } from "../components/Notification";
 import { PageHeader } from "../components/PageHeader";
 import { useProduction } from "../hooks/useProduction";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MaintenanceType } from "../types";
 import type { MaintenanceWindow } from "../types";
 import { formatDate } from "../utils/dateFormat";
 import { CreatableSelect } from "../ui/CreatableSelect";
 import { DataTable } from "../ui/DataTable";
-import { Select } from "../ui/Select";
+import { MultiSelect, Select } from "../ui/Select";
 import { StatsRow, StatCard } from "../ui/StatCard";
 import * as ui from "../ui/classNames";
 
@@ -42,7 +44,7 @@ interface DrawerProps {
   editingMaintenance: MaintenanceWindow | null;
   machineOptions: Array<{ id: string; lineCode: string; name: string }>;
   visibleReasons: MaintenanceReason[];
-  mwMachineId: string;
+  mwMachineIds: string[];
   mwScheduleType: ScheduleType;
   mwRepeats: RepeatType;
   mwWeekdays: number[];
@@ -56,7 +58,7 @@ interface DrawerProps {
   mwError: string | null;
   onClose: () => void;
   onSave: () => void;
-  onMachineChange: (value: string) => void;
+  onMachineChange: (values: string[]) => void;
   onScheduleTypeChange: (value: ScheduleType) => void;
   onRepeatsChange: (value: RepeatType) => void;
   onWeekdayToggle: (day: number) => void;
@@ -74,7 +76,7 @@ function MaintenanceScheduleDrawer({
   editingMaintenance,
   machineOptions,
   visibleReasons,
-  mwMachineId,
+  mwMachineIds,
   mwScheduleType,
   mwRepeats,
   mwWeekdays,
@@ -115,10 +117,15 @@ function MaintenanceScheduleDrawer({
             </div>
           </div>
 
+          <label className={ui.label}>Machine
+            {editingMaintenance ? (
+              <Select value={mwMachineIds[0] ?? ""} onChange={(value) => onMachineChange([value])} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))} />
+            ) : (
+              <MultiSelect values={mwMachineIds} onChange={onMachineChange} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))} />
+            )}
+          </label>
+
           <div className="grid gap-4 md:grid-cols-2">
-            <label className={ui.label}>Machine
-              <Select value={mwMachineId} onChange={onMachineChange} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))} />
-            </label>
             <label className={ui.label}>Type
               <Select
                 value={mwType}
@@ -130,14 +137,8 @@ function MaintenanceScheduleDrawer({
                 ]}
               />
             </label>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
             <label className={ui.label}>Reason
               <CreatableSelect value={mwReason} onChange={onReasonChange} options={visibleReasons.map((item) => item.reason)} />
-            </label>
-            <label className={ui.label}>At
-              <input className={ui.input} type="time" value={mwAt} onChange={(event) => onAtChange(event.target.value)} />
             </label>
           </div>
 
@@ -152,27 +153,35 @@ function MaintenanceScheduleDrawer({
           {mwScheduleType === "recurring" ? (
             <>
               <div className="grid gap-4 md:grid-cols-2">
+                <label className={ui.label}>At
+                  <input className={ui.input} type="time" value={mwAt} onChange={(event) => onAtChange(event.target.value)} />
+                </label>
                 <label className={ui.label}>Repeats
                   <Select value={mwRepeats} onChange={(value) => onRepeatsChange(value as RepeatType)} options={[{ value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }]} />
                 </label>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
                 <label className={ui.label}>Starts on
                   <input className={ui.input} type="date" value={mwStartsOn} onChange={(event) => onStartsOnChange(event.target.value)} />
                 </label>
-              </div>
-              <div className={ui.label}>On
-                {mwRepeats === "monthly" ? (
-                  <input className={ui.input} type="number" min="1" max="28" step="1" inputMode="numeric" value={mwDay} onChange={(event) => onDayChange(Number(event.target.value))} />
-                ) : (
-                  <div className="flex min-h-8 flex-wrap items-center gap-1">
-                    {WEEKDAYS.map((day) => <button key={day.value} type="button" aria-pressed={mwWeekdays.includes(day.value)} onClick={() => onWeekdayToggle(day.value)} className={`h-7 min-w-7 rounded-full px-2 text-xs font-semibold transition ${mwWeekdays.includes(day.value) ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{day.label}</button>)}
-                  </div>
-                )}
+                <div className={ui.label}>On
+                  {mwRepeats === "monthly" ? (
+                    <input className={ui.input} type="number" min="1" max="28" step="1" inputMode="numeric" value={mwDay} onChange={(event) => onDayChange(Number(event.target.value))} />
+                  ) : (
+                    <div className="flex min-h-8 flex-wrap items-center gap-1">
+                      {WEEKDAYS.map((day) => <button key={day.value} type="button" aria-pressed={mwWeekdays.includes(day.value)} onClick={() => onWeekdayToggle(day.value)} className={`h-7 min-w-7 rounded-full px-2 text-xs font-semibold transition ${mwWeekdays.includes(day.value) ? "bg-brand-600 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{day.label}</button>)}
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               <label className={ui.label}>Starts on
                 <input className={ui.input} type="date" value={mwStartsOn} onChange={(event) => onStartsOnChange(event.target.value)} />
+              </label>
+              <label className={ui.label}>At
+                <input className={ui.input} type="time" value={mwAt} onChange={(event) => onAtChange(event.target.value)} />
               </label>
             </div>
           )}
@@ -193,25 +202,31 @@ export function MaintenancePage() {
   const [maintenanceMachineFilter, setMaintenanceMachineFilter] = useState("All");
   const [maintenanceTypeFilter, setMaintenanceTypeFilter] = useState("All");
   const [maintenanceScheduleFilter, setMaintenanceScheduleFilter] = useState("All");
+  const maintenanceSearchQuery = useDebouncedValue(maintenanceSearch.trim());
   const {
     machineOptions,
     maintenanceWindows,
     maintenancePagination,
-    addMaintenanceWindow,
+    addMaintenanceWindows,
     updateMaintenanceWindow,
     removeMaintenanceWindow,
     isLoading,
-    refresh,
-  } = useProduction(1, 100, maintenancePage, 15, {
-    maintenanceSearch: maintenanceSearch.trim(),
-    maintenanceMachineId: maintenanceMachineFilter === "All" ? undefined : maintenanceMachineFilter,
-    maintenanceType: maintenanceTypeFilter === "All" ? undefined : maintenanceTypeFilter,
-    maintenanceScheduleType: maintenanceScheduleFilter === "All" ? undefined : maintenanceScheduleFilter,
+    refreshMaintenance,
+  } = useProduction({
+    machineOptions: true,
+    maintenance: {
+      page: maintenancePage,
+      pageSize: 15,
+      search: maintenanceSearchQuery,
+      machineId: maintenanceMachineFilter === "All" ? undefined : maintenanceMachineFilter,
+      type: maintenanceTypeFilter === "All" ? undefined : maintenanceTypeFilter,
+      scheduleType: maintenanceScheduleFilter === "All" ? undefined : maintenanceScheduleFilter,
+    },
   });
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingMaintenance, setEditingMaintenance] = useState<MaintenanceWindow | null>(null);
-  const [mwMachineId, setMwMachineId] = useState("");
+  const [mwMachineIds, setMwMachineIds] = useState<string[]>([]);
   const [mwScheduleType, setMwScheduleType] = useState<ScheduleType>("recurring");
   const [mwRepeats, setMwRepeats] = useState<RepeatType>("monthly");
   const [mwWeekdays, setMwWeekdays] = useState([2]);
@@ -225,10 +240,6 @@ export function MaintenancePage() {
   const [maintenanceReasons, setMaintenanceReasons] = useState<MaintenanceReason[]>([]);
   const [mwError, setMwError] = useState<string | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!mwMachineId && machineOptions[0]) setMwMachineId(machineOptions[0].id);
-  }, [machineOptions, mwMachineId]);
 
   useEffect(() => {
     void api<MaintenanceReason[]>("/maintenance-reasons").then(setMaintenanceReasons).catch(() => setMaintenanceReasons([]));
@@ -263,7 +274,7 @@ export function MaintenancePage() {
 
   const resetForm = () => {
     setEditingMaintenance(null);
-    setMwMachineId(machineOptions[0]?.id ?? "");
+    setMwMachineIds([]);
     setMwScheduleType("recurring");
     setMwRepeats("monthly");
     setMwWeekdays([2]);
@@ -293,7 +304,7 @@ export function MaintenancePage() {
     const durationHours = (new Date(window.endAt).getTime() - start.getTime()) / 3_600_000;
     const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     setEditingMaintenance(window);
-    setMwMachineId(window.machineId);
+    setMwMachineIds([window.machineId]);
     setMwScheduleType(window.scheduleType === "Recurring" ? "recurring" : "one-time");
     setMwRepeats(window.repeatType === "Weekly" ? "weekly" : "monthly");
     setMwWeekdays(window.repeatValue?.split(",").map((day) => weekdays.indexOf(day.trim())).filter((day) => day >= 0) ?? []);
@@ -308,14 +319,16 @@ export function MaintenancePage() {
     setDrawerOpen(true);
   };
 
-  const handleSaveWindow = () => {
-    if (!mwMachineId || !mwStartsOn || mwDuration < 1 || (mwScheduleType === "recurring" && ((mwRepeats === "monthly" && (mwDay < 1 || mwDay > 28)) || (mwRepeats === "weekly" && mwWeekdays.length === 0)))) {
-      setMwError("Complete the schedule with a day from 1 to 28.");
+  const handleSaveWindow = async () => {
+    if (mwMachineIds.length === 0 || !mwStartsOn || mwDuration < 1 || (mwScheduleType === "recurring" && ((mwRepeats === "monthly" && (mwDay < 1 || mwDay > 28)) || (mwRepeats === "weekly" && mwWeekdays.length === 0)))) {
+      setMwError(mwMachineIds.length === 0 ? "Select at least one machine." : "Complete the schedule with a day from 1 to 28.");
       return;
     }
+
     const [hours, minutes] = mwAt.split(":").map(Number);
     const startsAt = new Date(`${mwStartsOn}T00:00:00`);
     startsAt.setHours(hours, minutes, 0, 0);
+
     if (mwScheduleType === "recurring" && mwRepeats === "monthly") {
       const base = new Date(startsAt);
       startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
@@ -324,6 +337,7 @@ export function MaintenancePage() {
         startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
       }
     }
+
     if (mwScheduleType === "recurring" && mwRepeats === "weekly") {
       for (let offset = 0; offset < 7; offset += 1) {
         const candidate = new Date(startsAt);
@@ -334,22 +348,28 @@ export function MaintenancePage() {
         }
       }
     }
+
     const endsAt = new Date(startsAt.getTime() + mwDuration * (mwDurationUnit === "days" ? 86_400_000 : 3_600_000));
+    const format = (date: Date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
+
     setMwError(null);
     const draft = {
-      machineId: mwMachineId,
       affectedScheduleId: editingMaintenance?.affectedScheduleId,
-      startAt: startsAt.toISOString(),
-      endAt: endsAt.toISOString(),
+      startAt: format(startsAt),
+      endAt: format(endsAt),
       type: mwType,
       reason: mwReason || undefined,
       scheduleType: mwScheduleType === "recurring" ? "Recurring" : "One Time",
       repeatType: mwScheduleType === "recurring" ? (mwRepeats === "weekly" ? "Weekly" : "Monthly") : undefined,
       repeatValue: mwScheduleType === "recurring" ? (mwRepeats === "weekly" ? mwWeekdays.map((day) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][day]).join(", ") : String(mwDay)) : undefined,
     } as const;
-    if (editingMaintenance) updateMaintenanceWindow(editingMaintenance.id, draft);
-    else addMaintenanceWindow(draft);
-    closeDrawer();
+
+    const saved = editingMaintenance
+      ? await updateMaintenanceWindow(editingMaintenance.id, { ...draft, machineId: mwMachineIds[0] })
+      : await addMaintenanceWindows(mwMachineIds, draft);
+
+    if (saved) closeDrawer();
   };
 
   return (
@@ -367,10 +387,13 @@ export function MaintenancePage() {
               form.append("file", file);
               try {
                 const result = await api<{ imported: number; errors: string[] }>("/maintenance-windows/import", { method: "POST", body: form });
-                await refresh();
-                window.alert(result.errors.length ? `${result.imported} imported. ${result.errors.join(" ")}` : `${result.imported} imported.`);
+                await refreshMaintenance();
+                notify(
+                  result.errors.length ? "warning" : "success",
+                  result.errors.length ? `${result.imported} imported. ${result.errors.join(" ")}` : `${result.imported} imported successfully.`,
+                );
               } catch (cause) {
-                window.alert(cause instanceof Error ? cause.message : "Import failed");
+                notify("error", cause instanceof Error ? cause.message : "Import failed");
               }
               event.target.value = "";
             }} />
@@ -437,7 +460,7 @@ export function MaintenancePage() {
         editingMaintenance={editingMaintenance}
         machineOptions={machineOptions}
         visibleReasons={visibleReasons}
-        mwMachineId={mwMachineId}
+        mwMachineIds={mwMachineIds}
         mwScheduleType={mwScheduleType}
         mwRepeats={mwRepeats}
         mwWeekdays={mwWeekdays}
@@ -451,7 +474,7 @@ export function MaintenancePage() {
         mwError={mwError}
         onClose={closeDrawer}
         onSave={handleSaveWindow}
-        onMachineChange={setMwMachineId}
+        onMachineChange={setMwMachineIds}
         onScheduleTypeChange={setMwScheduleType}
         onRepeatsChange={setMwRepeats}
         onWeekdayToggle={(day) => setMwWeekdays((values) => values.includes(day) ? values.filter((value) => value !== day) : [...values, day])}

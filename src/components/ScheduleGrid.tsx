@@ -83,7 +83,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-200 px-4 py-2.5 text-2xs text-slate-500">
           {[JobStatus.Open, JobStatus.ProductionProgress, JobStatus.ProductionComplete, JobStatus.ProductionPending]
             .map((jobStatus): readonly [string, string] => [ui.scheduleToneClass(jobStatus, false), jobStatus])
-            .concat([[ui.scheduleToneClass(undefined, true), "Routine Maintenance"]])
+            .concat([[ui.scheduleToneClass(undefined, true), "Maintenance"]])
             .map(([tone, label]) => <span key={label} className="flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-full ${tone}`} />{label}</span>)}
         </div>
 
@@ -105,7 +105,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
       <div className="overflow-x-auto rounded-b-xl" onScroll={handleBodyScroll}>
         <div className="grid text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS, width: "max-content", minWidth: "100%" }}>
           {isLoading ? (
-            <div role="status" className="col-span-6 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-blue-600" />Loading data...</div>
+            <div role="status" className="col-span-6 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
           ) : groups.length === 0 ? (
             <div className="col-span-6 px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
           ) : groups.map((groupMachineId) => {
@@ -165,6 +165,7 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
       weekStart={weekStart}
       title={job.productName}
       subtitle={`Qty ${job.qty.toLocaleString()}`}
+      locked={job.isLocked}
       toneClassName={tone}
       testId={`schedule-job-${job.id}`}
       wrapperClassName={wrapperClassName}

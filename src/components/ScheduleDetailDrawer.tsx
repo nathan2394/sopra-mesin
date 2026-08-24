@@ -11,9 +11,10 @@ import { formatDate, formatDateTime } from "../utils/dateFormat";
 interface Props {
   job?: ScheduleJob;
   maintenance?: MaintenanceWindow;
+  setupMaintenance?: MaintenanceWindow;
   machine?: Machine;
   orderRef?: string;
-  onSave?: (value: { isLocked: boolean; startAt?: string; endAt?: string; correctiveMaintenance?: { reason: string; estimatedHours: number } }) => Promise<void> | void;
+  onSave?: (value: { isLocked: boolean; startAt?: string; endAt?: string; correctiveMaintenance?: { reason: string; estimatedHours: number } }) => Promise<boolean> | boolean;
   onClose: () => void;
 }
 
@@ -61,7 +62,7 @@ function ArrowIcon() {
   );
 }
 
-export function ScheduleDetailDrawer({ job, maintenance, machine, orderRef, onSave, onClose }: Props) {
+export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machine, orderRef, onSave, onClose }: Props) {
   const [locked, setLocked] = useState(job?.isLocked ?? false);
   const [correctiveMaintenance, setCorrectiveMaintenance] = useState(false);
   const [reason, setReason] = useState("Burned Bearing");
@@ -77,7 +78,7 @@ export function ScheduleDetailDrawer({ job, maintenance, machine, orderRef, onSa
   const canEditSchedule = canEdit && !locked && !!job;
   const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const isMaintenance = !!maintenance;
-  const status = isMaintenance ? "Routine Maintenance" : job?.status ?? JobStatus.Open;
+  const status = isMaintenance ? maintenance?.type ?? "Maintenance" : job?.status ?? JobStatus.Open;
   const statusClass = ui.scheduleToneClass(job?.status, isMaintenance);
 
   useEffect(() => {
@@ -104,7 +105,7 @@ export function ScheduleDetailDrawer({ job, maintenance, machine, orderRef, onSa
             <>
               <div>
                 <p className="mb-1 text-13 text-slate-500">Lock Production</p>
-                <button type="button" role="switch" aria-checked={locked} disabled={!canEdit} onClick={() => setLocked((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${locked ? "justify-end bg-blue-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
+                <button type="button" role="switch" aria-checked={locked} disabled={!canEdit} onClick={() => setLocked((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${locked ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><LockIcon /></span>
                 </button>
               </div>
@@ -145,16 +146,32 @@ export function ScheduleDetailDrawer({ job, maintenance, machine, orderRef, onSa
           </div>
           {!isMaintenance && invalidSchedule && <p className="-mt-2 border-b border-slate-200 pb-5 text-xs text-red-600">End production harus lebih besar dari start production.</p>}
 
+          {!isMaintenance && (
+            <div className="rounded-lg border border-brand-200 bg-brand-50/50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-900">Setup Maintenance</span>
+                {setupMaintenance && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
+              </div>
+              {setupMaintenance ? (
+                <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
+                  <div><p className="text-2xs text-slate-400">Start Setup</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(setupMaintenance.startAt)}</p></div>
+                  <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
+                  <div><p className="text-2xs text-slate-400">End Setup</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(setupMaintenance.endAt)}</p></div>
+                </div>
+              ) : <p className="mt-2 text-xs text-slate-500">No setup maintenance linked to this order.</p>}
+            </div>
+          )}
+
           {isMaintenance ? (
             <div className="rounded-xl border border-slate-200 p-3">
-              <p className="text-13 text-slate-500">Routine Maintenance</p>
+              <p className="text-13 text-slate-500">{maintenance?.type ?? "Maintenance"}</p>
               <label className="mt-4 block text-13 font-semibold text-slate-700">Reason</label>
               <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-13 text-slate-500 shadow-sm">{maintenance?.reason || maintenance?.type || "-"}</div>
             </div>
           ) : (
             <div className="rounded-lg border border-slate-200 p-3">
               <div className="flex items-center gap-3">
-                <button type="button" role="switch" aria-checked={hasActiveCorrective || correctiveMaintenance} disabled={isComplete || hasActiveCorrective} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${hasActiveCorrective || correctiveMaintenance ? "justify-end bg-blue-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
+                <button type="button" role="switch" aria-checked={hasActiveCorrective || correctiveMaintenance} disabled={isComplete || hasActiveCorrective} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${hasActiveCorrective || correctiveMaintenance ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><MaintenanceIcon /></span>
                 </button>
                 <span className="text-sm font-medium text-slate-900">Corrective Maintenance</span>
@@ -179,7 +196,15 @@ export function ScheduleDetailDrawer({ job, maintenance, machine, orderRef, onSa
 
           <div className="flex justify-end gap-2">
             <button type="button" className={ui.btnSecondary} onClick={onClose}>Back</button>
-            {!isComplete && <button type="button" disabled={isMaintenance || invalidSchedule} className={ui.btnPrimary} onClick={async () => { await onSave?.({ isLocked: locked, startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined, endAt: canEditSchedule ? mergeDateTime(endDate, endTime) : undefined, correctiveMaintenance: correctiveMaintenance ? { reason, estimatedHours: Number(estimatedHours) } : undefined }); onClose(); }}>Save</button>}
+            {!isComplete && <button type="button" disabled={isMaintenance || invalidSchedule} className={ui.btnPrimary} onClick={async () => {
+              const saved = await onSave?.({
+                isLocked: locked,
+                startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined,
+                endAt: canEditSchedule ? mergeDateTime(endDate, endTime) : undefined,
+                correctiveMaintenance: correctiveMaintenance ? { reason, estimatedHours: Number(estimatedHours) } : undefined,
+              });
+              if (saved !== false) onClose();
+            }}>Save</button>}
           </div>
     </Drawer>
   );

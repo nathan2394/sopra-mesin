@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, LogIn } from "lucide-react";
 import { googleClientId, login, loginWithGoogle } from "../api/client";
 import { Logo } from "../components/Logo";
+import { notify } from "../components/Notification";
 
 interface GoogleCredentialResponse {
   credential?: string;
@@ -20,14 +21,13 @@ declare global {
   }
 }
 
-const inputClass = "h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-blue-600 focus:ring-2 focus:ring-blue-600/15";
+const inputClass = "h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15";
 
 export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
   const googleButtonRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,14 +45,13 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
           window.google.accounts.id.initialize({
             client_id: clientId,
             callback: async ({ credential }) => {
-              if (!credential) return setError("Google credential tidak tersedia");
-              setError("");
+              if (!credential) return notify("warning", "Google credential tidak tersedia");
               setSubmitting(true);
               try {
                 await loginWithGoogle(credential);
                 onAuthenticated();
               } catch (cause) {
-                setError(cause instanceof Error ? cause.message : "Google login gagal");
+                notify("error", cause instanceof Error ? cause.message : "Google login gagal");
               } finally {
                 setSubmitting(false);
               }
@@ -84,7 +83,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
         observer = new ResizeObserver(render);
         if (googleButtonRef.current) observer.observe(googleButtonRef.current);
       } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : "Google login tidak tersedia");
+        if (active) notify("error", cause instanceof Error ? cause.message : "Google login tidak tersedia");
       }
     };
 
@@ -97,13 +96,12 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
     setSubmitting(true);
     try {
       await login(username, password);
       onAuthenticated();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Authentication failed");
+      notify("error", cause instanceof Error ? cause.message : "Authentication failed");
     } finally {
       setSubmitting(false);
     }
@@ -112,13 +110,13 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
   return (
     <main className="grid min-h-dvh bg-white font-sans lg:grid-cols-2">
       <section aria-hidden="true" className="relative hidden bg-[url('/login-background.webp')] bg-cover bg-center lg:block">
-        <div className="absolute inset-0 bg-blue-600/30" />
+        <div className="absolute inset-0 bg-brand-600/30" />
       </section>
 
       <section className="flex min-h-dvh items-center justify-center px-6 py-12 sm:px-10 lg:px-14">
         <div className="w-full max-w-[448px]">
           <header className="text-center">
-            <div className="mb-3 flex justify-center"><Logo size={56} /></div>
+            <div className="mb-1 flex justify-center"><Logo className="h-32 w-72" /></div>
             <h1 className="text-2xl leading-8 font-bold tracking-[-0.6px] text-slate-900">Welcome Back</h1>
             <p className="mt-0.5 text-base leading-6 font-semibold text-slate-500">Sign in to access your data</p>
           </header>
@@ -153,19 +151,17 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
                   type="button"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   onClick={() => setShowPassword((visible) => !visible)}
-                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-slate-500 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
+                  className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-md text-slate-500 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-brand-600"
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </span>
             </label>
 
-            {error && <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
-
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-11 items-center justify-center gap-2 rounded-md bg-blue-600 px-4 text-sm font-medium text-white transition hover:bg-blue-700 active:translate-y-px disabled:cursor-wait disabled:opacity-65 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              className="flex h-11 items-center justify-center gap-2 rounded-md bg-brand-600 px-4 text-sm font-medium text-white transition hover:bg-brand-700 active:translate-y-px disabled:cursor-wait disabled:opacity-65 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
             >
               <LogIn size={17} />
               {submitting ? "Please wait..." : "Sign In"}

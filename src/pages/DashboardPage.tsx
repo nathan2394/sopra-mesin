@@ -12,7 +12,10 @@ import { computeOrderTotals } from "../utils/orderMath";
 
 export function DashboardPage() {
   const { orders } = useOrders();
-  const { machines, scheduleJobs } = useProduction();
+  const { machines, scheduleJobs } = useProduction({
+    machines: { page: 1, pageSize: 100 },
+    schedules: {},
+  });
 
   const openQty = useMemo(
     () =>

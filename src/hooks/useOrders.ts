@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PagedResult } from "../api/client";
+import { notify } from "../components/Notification";
 import { OrderSourceType, OrderStatus } from "../types";
 import type { Order, OrderDraft } from "../types";
 
@@ -17,6 +18,8 @@ interface ApiOrderLine {
 interface ApiOrder {
   id: number;
   source: string;
+  paymentStatus?: "Paid" | "Unpaid";
+  externalId?: number;
   orderNumber: string;
   purchaseOrderNumber?: string;
   customerName?: string;
@@ -49,23 +52,21 @@ interface ApiSchedule {
 }
 
 const sourceFromApi: Record<string, OrderSourceType> = {
-  "SO Paid": OrderSourceType.SoPaid,
-  "SC Unpaid": OrderSourceType.ScUnpaid,
-  "PI Unpaid": OrderSourceType.PiUnpaid,
+  "SO:Paid": OrderSourceType.SoPaid,
+  "SC:Unpaid": OrderSourceType.ScUnpaid,
+  "PI:Unpaid": OrderSourceType.PiUnpaid,
 };
-const sourceToApi: Record<OrderSourceType, string> = {
-  [OrderSourceType.SoPaid]: "SO Paid",
-  [OrderSourceType.ScUnpaid]: "SC Unpaid",
-  [OrderSourceType.PiUnpaid]: "PI Unpaid",
+const sourceToApi: Record<OrderSourceType, { source: string; paymentStatus: "Paid" | "Unpaid" }> = {
+  [OrderSourceType.SoPaid]: { source: "SO", paymentStatus: "Paid" },
+  [OrderSourceType.ScUnpaid]: { source: "SC", paymentStatus: "Unpaid" },
+  [OrderSourceType.PiUnpaid]: { source: "PI", paymentStatus: "Unpaid" },
 };
 
-const fromApi = (order: ApiOrder, schedule?: ApiSchedule): Order => {
+const fromApi = (order: ApiOrder): Order => {
   const timestamp = order.orderDate ?? new Date().toISOString();
   return {
     id: String(order.id),
-    sourceType: sourceFromApi[order.source] ?? OrderSourceType.SoPaid,
-    scheduleId: schedule ? String(schedule.id) : undefined,
-    scheduleMachineId: schedule ? String(schedule.machineId) : undefined,
+    sourceType: sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid,
     orderNo: order.orderNumber,
     poDate: timestamp,
     customerName: order.customerName ?? "",
@@ -92,7 +93,8 @@ const fromApi = (order: ApiOrder, schedule?: ApiSchedule): Order => {
 };
 
 const toApi = (order: OrderDraft) => ({
-  source: sourceToApi[order.sourceType],
+  source: sourceToApi[order.sourceType].source,
+  paymentStatus: sourceToApi[order.sourceType].paymentStatus,
   orderNumber: order.orderNo || undefined,
   purchaseOrderNumber: order.customerPoNo,
   customerName: order.customerName,
@@ -116,9 +118,52 @@ const toApi = (order: OrderDraft) => ({
 });
 
 const report = (cause: unknown) =>
-  window.alert(cause instanceof Error ? cause.message : "API request failed");
+  notify("error", cause instanceof Error ? cause.message : "API request failed");
 
-export function useOrders(page = 1, pageSize = 100, search = "", source = "", status = "", allPages = false) {
+interface OrderQuery {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  source?: OrderSourceType | "";
+  status?: string;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
+}
+
+export async function getOrderPage({
+  page = 1,
+  pageSize = 100,
+  search = "",
+  source = "",
+  status = "",
+  sortBy = "",
+  sortDir = "asc",
+}: OrderQuery = {}): Promise<PagedResult<Order>> {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (search) query.set("search", search);
+  if (source) {
+    query.set("source", sourceToApi[source].source);
+    query.set("paymentStatus", sourceToApi[source].paymentStatus);
+  }
+  if (status) query.set("status", status);
+  if (sortBy) {
+    query.set("sortBy", sortBy);
+    query.set("sortDir", sortDir);
+  }
+
+  const result = await api<PagedResult<ApiOrder>>(`/orders?${query}`);
+  return { ...result, items: result.items.map(fromApi) };
+}
+
+export function useOrders(
+  page = 1,
+  pageSize = 100,
+  search = "",
+  source: OrderSourceType | "" = "",
+  status = "",
+  sortBy = "",
+  sortDir: "asc" | "desc" = "asc",
+) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pagination, setPagination] = useState({ page, pageSize, totalItems: 0, totalPages: 0 });
   const [isLoading, setIsLoading] = useState(true);
@@ -126,43 +171,23 @@ export function useOrders(page = 1, pageSize = 100, search = "", source = "", st
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
-      if (search) query.set("search", search);
-      if (source) query.set("source", source);
-      if (status) query.set("status", status);
-      const [result, schedules] = await Promise.all([
-        api<PagedResult<ApiOrder>>(`/orders?${query}`),
-        api<ApiSchedule[]>("/schedules"),
-      ]);
-      const remaining = allPages ? await Promise.all(Array.from({ length: result.totalPages - 1 }, (_, index) => {
-        const nextQuery = new URLSearchParams(query);
-        nextQuery.set("page", String(index + 2));
-        return api<PagedResult<ApiOrder>>(`/orders?${nextQuery}`);
-      })) : [];
+      const result = await getOrderPage({ page, pageSize, search, source, status, sortBy, sortDir });
       setPagination({
         page: result.page,
         pageSize: result.pageSize,
         totalItems: result.totalItems,
         totalPages: result.totalPages,
       });
-      setOrders([result, ...remaining].flatMap((pageResult) => pageResult.items).map((order) => {
-        const lineIds = new Set(order.lines.map((line) => line.id));
-        return fromApi(order, schedules.find((schedule) =>
-          schedule.orders.some((line) => lineIds.has(line.orderLineId))));
-      }));
-    } catch (cause) { report(cause); } finally { setIsLoading(false); }
-  }, [page, pageSize, search, source, status, allPages]);
+      setOrders(result.items);
+    } catch (cause) {
+      report(cause);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [page, pageSize, search, source, status, sortBy, sortDir]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
-
-  const addOrder = useCallback(async (draft: OrderDraft) => {
-    try {
-      const order = await api<ApiOrder>("/orders", { method: "POST", body: JSON.stringify(toApi(draft)) });
-      await syncSchedule(order, draft);
-      await refresh();
-    } catch (cause) { report(cause); }
   }, [refresh]);
 
   const updateOrder = useCallback(async (id: string, draft: OrderDraft) => {
@@ -173,17 +198,11 @@ export function useOrders(page = 1, pageSize = 100, search = "", source = "", st
       });
       await syncSchedule(order, draft);
       await refresh();
+      notify("success", "Order updated successfully.");
     } catch (cause) { report(cause); }
   }, [refresh]);
 
-  const removeOrder = useCallback(async (id: string) => {
-    try {
-      await api<void>(`/orders/${id}`, { method: "DELETE" });
-      await refresh();
-    } catch (cause) { report(cause); }
-  }, [refresh]);
-
-  return { orders, pagination, isLoading, addOrder, updateOrder, removeOrder, resetSampleData: refresh };
+  return { orders, pagination, isLoading, updateOrder, refresh };
 }
 
 async function syncSchedule(order: ApiOrder, draft: OrderDraft) {

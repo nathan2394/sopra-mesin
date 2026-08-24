@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useProduction } from "../hooks/useProduction";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { PageHeader } from "../components/PageHeader";
 import { MachineForm } from "../components/MachineForm";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -14,6 +15,7 @@ export function MachinesPage() {
   const [machineSearch, setMachineSearch] = useState("");
   const [machineTypeFilter, setMachineTypeFilter] = useState("All");
   const [machineStatusFilter, setMachineStatusFilter] = useState("All");
+  const machineSearchQuery = useDebouncedValue(machineSearch.trim());
   const {
     machines,
     machineOptions,
@@ -23,10 +25,16 @@ export function MachinesPage() {
     updateMachine,
     removeMachine,
     isLoading,
-  } = useProduction(machinePage, 15, 1, 15, {
-    machineSearch: machineSearch.trim(),
-    machineType: machineTypeFilter === "All" ? undefined : machineTypeFilter,
-    machineIsActive: machineStatusFilter === "All" ? undefined : machineStatusFilter === "Active",
+  } = useProduction({
+    machines: {
+      page: machinePage,
+      pageSize: 15,
+      search: machineSearchQuery,
+      type: machineTypeFilter === "All" ? undefined : machineTypeFilter,
+      isActive: machineStatusFilter === "All" ? undefined : machineStatusFilter === "Active",
+    },
+    machineOptions: true,
+    schedules: {},
   });
 
   const [formOpen, setFormOpen] = useState(false);
@@ -47,36 +55,13 @@ export function MachinesPage() {
     if (machinePagination.totalPages > 0 && machinePage > machinePagination.totalPages) setMachinePage(machinePagination.totalPages);
   }, [machinePage, machinePagination.totalPages]);
 
-  const openAddForm = () => {
-    setEditing(null);
-    setFormOpen(true);
-  };
-
-  const openEditForm = (machine: Machine) => {
-    setEditing(machine);
-    setFormOpen(true);
-  };
-
-  const handleSaveMachine = (draft: MachineDraft) => {
-    if (editing) updateMachine(editing.id, draft);
-    else addMachine(draft);
-    setFormOpen(false);
-    setEditing(null);
-  };
-
-  const handleDeleteMachine = (machine: Machine) => {
-    const jobCount = jobsByMachine.get(machine.id) ?? 0;
-    const warning = jobCount > 0 ? ` This also removes ${jobCount} scheduled job(s) on it.` : "";
-    if (window.confirm(`Delete machine ${machine.lineCode}?${warning}`)) removeMachine(machine.id);
-  };
-
   return (
     <div className={ui.page}>
       <PageHeader
         breadcrumb={[]}
         title="Machines"
         subtitle="Machine master data."
-        actions={<button className={ui.btnPrimary} onClick={openAddForm}><Plus size={15} /> New machine</button>}
+        actions={<button className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New machine</button>}
       />
 
       <StatsRow>
@@ -113,7 +98,7 @@ export function MachinesPage() {
           { key: "cavity", header: "Cavity", cell: (machine) => machine.allocatedCavity },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
-          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (machine) => <><button className={ui.btnLink} onClick={() => openEditForm(machine)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => handleDeleteMachine(machine)}>Delete</button></> },
+          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (machine) => <><button className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button><button className={ui.btnLinkDanger} onClick={() => { const jobCount = jobsByMachine.get(machine.id) ?? 0; const warning = jobCount > 0 ? ` This also removes ${jobCount} scheduled job(s) on it.` : ""; if (window.confirm(`Delete machine ${machine.lineCode}?${warning}`)) void removeMachine(machine.id); }}>Delete</button></> },
         ]}
         pagination={{ ...machinePagination, onPageChange: setMachinePage, label: "Machines" }}
         isLoading={isLoading}
@@ -122,7 +107,14 @@ export function MachinesPage() {
       {formOpen && (
         <MachineForm
           initial={editing}
-          onSave={handleSaveMachine}
+          onSave={async (draft: MachineDraft) => {
+            const saved = editing
+              ? await updateMachine(editing.id, draft)
+              : await addMachine(draft);
+            if (!saved) return;
+            setFormOpen(false);
+            setEditing(null);
+          }}
           onCancel={() => {
             setFormOpen(false);
             setEditing(null);

@@ -1,6 +1,9 @@
+import { queueWarning } from "../components/Notification";
+
 const API_URL = import.meta.env.VITE_API_URL ?? "https://localhost:5081/api";
 const TOKEN_KEY = "sopra-mesin-token";
 const USER_KEY = "sopra-mesin-user";
+const pendingGets = new Map<string, Promise<unknown>>();
 
 interface ApiResponse<T> {
   success: boolean;
@@ -33,7 +36,7 @@ const saveAuth = (auth: AuthResult) => {
   localStorage.setItem(USER_KEY, auth.username);
 };
 
-export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function send<T>(path: string, init: RequestInit): Promise<T> {
   const token = localStorage.getItem(TOKEN_KEY);
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
@@ -46,15 +49,39 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (response.status === 401 && token) {
     logout();
+    queueWarning("Your session has expired. Please sign in again.");
     window.location.reload();
+    throw new Error("Your session has expired. Please sign in again.");
   }
   if (response.status === 204) return undefined as T;
 
-  const payload = (await response.json()) as ApiResponse<T>;
-  if (!response.ok || !payload.success) {
-    throw new Error(payload.message || `API error ${response.status}`);
+  const text = await response.text();
+  let payload: ApiResponse<T> | undefined;
+  try {
+    payload = text ? JSON.parse(text) as ApiResponse<T> : undefined;
+  } catch {
+    if (!response.ok) throw new Error(`API request failed (${response.status}).`);
+    throw new Error("The API returned an invalid response.");
+  }
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.message || `API error ${response.status}`);
   }
   return payload.data;
+}
+
+export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method !== "GET" || init.body) return send<T>(path, init);
+
+  const pending = pendingGets.get(path);
+  if (pending) return pending as Promise<T>;
+
+  const request = send<T>(path, init);
+  pendingGets.set(path, request);
+  void request.finally(() => {
+    if (pendingGets.get(path) === request) pendingGets.delete(path);
+  }).catch(() => undefined);
+  return request;
 }
 
 export async function login(username: string, password: string) {

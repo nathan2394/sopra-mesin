@@ -1,4 +1,5 @@
 import type { CSSProperties, MouseEventHandler, PointerEventHandler } from "react";
+import { LockKeyhole } from "lucide-react";
 import { formatMonthDay } from "../utils/dateFormat";
 
 const DAY_MS = 86_400_000;
@@ -44,6 +45,7 @@ interface ScheduleBlockProps {
   weekStart: Date;
   title: string;
   subtitle?: string;
+  locked?: boolean;
   toneClassName: string;
   testId?: string;
   className?: string;
@@ -53,7 +55,7 @@ interface ScheduleBlockProps {
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }
 
-export function ScheduleBlock({ start, end, weekStart, title, subtitle, toneClassName, testId, className, wrapperClassName, borderClassName = "border-slate-200", onClick, onPointerDown }: ScheduleBlockProps) {
+export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, toneClassName, testId, className, wrapperClassName, borderClassName = "border-slate-200", onClick, onPointerDown }: ScheduleBlockProps) {
   const { left, width } = scheduleBlockGeometry(start, end, weekStart);
   const label = subtitle ?? scheduleBlockLabel(start, end, weekStart);
   const style: CSSProperties = { left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` };
@@ -68,11 +70,14 @@ export function ScheduleBlock({ start, end, weekStart, title, subtitle, toneClas
         data-testid={testId}
         className={`absolute top-2 flex h-8 flex-col justify-center gap-0.5 touch-none select-none overflow-hidden rounded px-2 text-left text-3xs font-semibold leading-3 text-white cursor-pointer ${toneClassName}${className ? ` ${className}` : ""}`}
         style={style}
-        title={`${start.toLocaleString()} - ${end.toLocaleString()}`}
+        title={`${locked ? "Locked · " : ""}${start.toLocaleString()} - ${end.toLocaleString()}`}
         onClick={onClick}
         onPointerDown={onPointerDown}
       >
-        <span className="truncate">{title}</span>
+        <span className="flex min-w-0 items-center gap-1">
+          {locked && <LockKeyhole size={10} className="shrink-0" aria-hidden="true" />}
+          <span className="truncate">{title}</span>
+        </span>
         {label && <span className="truncate font-normal opacity-90">{label}</span>}
       </button>
     </div>

@@ -85,7 +85,7 @@ export function MachineForm({ initial, onSave, onCancel }: Props) {
           <span className="flex items-center gap-2 text-sm text-slate-800">
             <input
               type="checkbox"
-              className="h-4 w-4 accent-blue-600"
+              className="h-4 w-4 accent-brand-600"
               checked={draft.isActive}
               onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
             />

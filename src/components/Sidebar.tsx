@@ -42,13 +42,11 @@ export function Sidebar({ collapsed }: Props) {
         collapsed ? "w-16" : "w-52.5"
       }`}
     >
-      <div className={`flex h-15.5 shrink-0 items-center gap-2 px-4 ${collapsed ? "justify-center" : ""}`}>
-        <Logo size={25} />
-        {!collapsed && (
-          <span className="whitespace-nowrap text-[15px] font-bold tracking-[-0.02em] text-slate-800">
-            NEXORA MESIN
-          </span>
-        )}
+      <div className="flex h-15.5 shrink-0 items-center justify-center px-3">
+        <Logo
+          variant={collapsed ? "mark" : "wordmark"}
+          className={collapsed ? "h-8 w-8" : "h-13 w-full"}
+        />
       </div>
 
       <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-2.5 pt-1">
@@ -73,7 +71,7 @@ export function Sidebar({ collapsed }: Props) {
                 className={({ isActive }) =>
                   `mb-0.5 flex h-6.75 items-center gap-2.5 rounded-md text-2xs font-medium no-underline transition-colors ${
                     collapsed ? "justify-center px-2" : "ml-2 px-1.5"
-                  } ${isActive ? "bg-blue-50 text-blue-600" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`
+                  } ${isActive ? "bg-brand-50 text-brand-600" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`
                 }
               >
                 <Icon size={15} strokeWidth={2.3} className="shrink-0" />
