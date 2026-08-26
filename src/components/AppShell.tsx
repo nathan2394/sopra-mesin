@@ -25,11 +25,13 @@ export function AppShell() {
   }, [collapsed]);
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-slate-50">
       <Sidebar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <Outlet />
+        <Topbar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
+        <main id="main-content" className="min-w-0 flex-1">
+          <Outlet />
+        </main>
       </div>
     </div>
   );

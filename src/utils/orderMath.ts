@@ -1,4 +1,4 @@
-import type { Order, OrderDraft, OrderLineItem } from "../types";
+import type { OrderLineItem } from "../types";
 
 export interface OrderTotals {
   qty: number;
@@ -15,16 +15,4 @@ export function computeOrderTotals(items: OrderLineItem[]): OrderTotals {
     qty,
     workHours: Number(workHours.toFixed(2)),
   };
-}
-
-/** Lead time in days between the PO date and the ship window closing — matches the
- * reference form's read-only "Lead Time" field. */
-export function computeLeadTimeDays(
-  order: Pick<Order, "poDate" | "poShipEnd"> | Pick<OrderDraft, "poDate" | "poShipEnd">
-): number {
-  if (!order.poDate || !order.poShipEnd) return 0;
-  const start = new Date(order.poDate).getTime();
-  const end = new Date(order.poShipEnd).getTime();
-  if (Number.isNaN(start) || Number.isNaN(end)) return 0;
-  return Math.max(0, Math.round((end - start) / 86_400_000));
 }

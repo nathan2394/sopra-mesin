@@ -1,11 +1,10 @@
-import { useMemo, useState } from "react";
-import { Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { useOrders } from "../hooks/useOrders";
-import { OrderForm } from "../components/OrderForm";
+import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { OrderTable, type SortKey } from "../components/OrderTable";
 import { PageHeader } from "../components/PageHeader";
 import { OrderSourceType, OrderStatus } from "../types";
-import type { Order, OrderDraft } from "../types";
+import type { Order } from "../types";
 import { computeOrderTotals } from "../utils/orderMath";
 import { StatsRow, StatCard } from "../ui/StatCard";
 import { Select } from "../ui/Select";
@@ -18,16 +17,28 @@ const SOURCE_LABEL: Record<OrderSourceType, string> = {
 };
 
 export function OrdersPage() {
-  const { orders, addOrder, updateOrder, removeOrder, resetSampleData } = useOrders();
-
+  const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<OrderSourceType | "All">("All");
   const [statusFilter, setStatusFilter] = useState<OrderStatus | "All">("All");
   const [sortKey, setSortKey] = useState<SortKey>("deliveryDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const searchQuery = useDebouncedValue(search.trim());
+  const { orders, pagination, updateOrder, isLoading } = useOrders(
+    page,
+    15,
+    searchQuery,
+    sourceFilter === "All" ? "" : sourceFilter,
+    statusFilter === "All" ? "" : statusFilter,
+    sortKey,
+    sortDir,
+  );
 
-  const [formOpen, setFormOpen] = useState(false);
-  const [editing, setEditing] = useState<Order | null>(null);
+  useEffect(() => {
+    if (pagination.totalPages > 0 && page > pagination.totalPages) {
+      setPage(pagination.totalPages);
+    }
+  }, [page, pagination.totalPages]);
 
   const stats = useMemo(() => {
     const bySource = (t: OrderSourceType) => orders.filter((o) => o.sourceType === t);
@@ -35,77 +46,21 @@ export function OrdersPage() {
       .filter((o) => o.status !== OrderStatus.Fulfilled && o.status !== OrderStatus.Cancelled)
       .reduce((sum, o) => sum + computeOrderTotals(o.items).qty, 0);
     return {
-      total: orders.length,
+      total: pagination.totalItems,
       so: bySource(OrderSourceType.SoPaid).length,
       sc: bySource(OrderSourceType.ScUnpaid).length,
       pi: bySource(OrderSourceType.PiUnpaid).length,
       openQty,
     };
-  }, [orders]);
-
-  const visibleOrders = useMemo(() => {
-    let rows = orders;
-    if (sourceFilter !== "All") rows = rows.filter((o) => o.sourceType === sourceFilter);
-    if (statusFilter !== "All") rows = rows.filter((o) => o.status === statusFilter);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      rows = rows.filter(
-        (o) =>
-          o.orderNo.toLowerCase().includes(q) ||
-          o.customerPoNo.toLowerCase().includes(q) ||
-          o.customerName.toLowerCase().includes(q) ||
-          o.items.some((it) => it.description.toLowerCase().includes(q))
-      );
-    }
-
-    const sorted = [...rows].sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "orderNo": cmp = a.orderNo.localeCompare(b.orderNo); break;
-        case "customerName": cmp = a.customerName.localeCompare(b.customerName); break;
-        case "customerPoNo": cmp = a.customerPoNo.localeCompare(b.customerPoNo); break;
-        case "qty": cmp = computeOrderTotals(a.items).qty - computeOrderTotals(b.items).qty; break;
-        case "deliveryDate": cmp = new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime(); break;
-        case "status": cmp = a.status.localeCompare(b.status); break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-
-    return sorted;
-  }, [orders, sourceFilter, statusFilter, search, sortKey, sortDir]);
+  }, [orders, pagination.totalItems]);
 
   const handleSort = (key: SortKey) => {
+    setPage(1);
     if (key === sortKey) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setSortDir((direction) => (direction === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
       setSortDir("asc");
-    }
-  };
-
-  const openAddForm = () => {
-    setEditing(null);
-    setFormOpen(true);
-  };
-
-  const openEditForm = (order: Order) => {
-    setEditing(order);
-    setFormOpen(true);
-  };
-
-  const handleSave = (draft: OrderDraft) => {
-    if (editing) {
-      updateOrder(editing.id, draft);
-    } else {
-      addOrder(draft);
-    }
-    setFormOpen(false);
-    setEditing(null);
-  };
-
-  const handleDelete = (order: Order) => {
-    if (window.confirm(`Delete order ${order.orderNo} for ${order.customerName}?`)) {
-      removeOrder(order.id);
     }
   };
 
@@ -113,24 +68,12 @@ export function OrdersPage() {
     updateOrder(order.id, { ...order, status });
   };
 
-  const handleResetSampleData = () => {
-    if (window.confirm("Replace all orders with fresh sample data? This can't be undone.")) {
-      resetSampleData();
-    }
-  };
-
   return (
     <div className={ui.page}>
       <PageHeader
-        breadcrumb={["Production", "Orders"]}
+        breadcrumb={[]}
         title="Orders"
-        subtitle="Open demand pulled from SO (paid), SC Unpaid and PI Unpaid — add, edit or update status directly."
-        actions={
-          <>
-            <button className={ui.btnSecondary} onClick={handleResetSampleData}>Reset sample data</button>
-            <button className={ui.btnPrimary} onClick={openAddForm}><Plus size={15} /> New order</button>
-          </>
-        }
+        subtitle="Open demand pulled from SO (paid), SC Unpaid and PI Unpaid."
       />
 
       <StatsRow>
@@ -146,11 +89,17 @@ export function OrdersPage() {
           className={ui.searchInput}
           placeholder="Search order no., PO #, item or customer…"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
         />
         <Select
           value={sourceFilter}
-          onChange={(v) => setSourceFilter(v as OrderSourceType | "All")}
+          onChange={(v) => {
+            setSourceFilter(v as OrderSourceType | "All");
+            setPage(1);
+          }}
           buttonClassName={ui.filterSelectButton}
           options={[
             { value: "All", label: "All sources" },
@@ -159,38 +108,30 @@ export function OrdersPage() {
         />
         <Select
           value={statusFilter}
-          onChange={(v) => setStatusFilter(v as OrderStatus | "All")}
+          onChange={(v) => {
+            setStatusFilter(v as OrderStatus | "All");
+            setPage(1);
+          }}
           buttonClassName={ui.filterSelectButton}
           options={[
             { value: "All", label: "All statuses" },
             ...Object.values(OrderStatus).map((s) => ({ value: s, label: s })),
           ]}
         />
-        <span className={ui.muted}>{visibleOrders.length} of {orders.length} shown</span>
+        <span className={ui.muted}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
 
-      <div className={ui.tableCard}>
-        <OrderTable
-          orders={visibleOrders}
-          onEdit={openEditForm}
-          onDelete={handleDelete}
-          onStatusChange={handleStatusChange}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={handleSort}
-        />
-      </div>
+      <OrderTable
+        orders={orders}
+        onStatusChange={handleStatusChange}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSort={handleSort}
+        pagination={pagination}
+        onPageChange={setPage}
+        isLoading={isLoading}
+      />
 
-      {formOpen && (
-        <OrderForm
-          initial={editing}
-          onSave={handleSave}
-          onCancel={() => {
-            setFormOpen(false);
-            setEditing(null);
-          }}
-        />
-      )}
     </div>
   );
 }

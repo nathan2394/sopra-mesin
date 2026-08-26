@@ -1,540 +1,233 @@
-import { useMemo, useState } from "react";
-import type { ReactNode } from "react";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { UIEvent } from "react";
+import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, Search } from "lucide-react";
 import { JobStatus } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
+import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
+import { ScheduleBlock } from "./ScheduleBlock";
 import * as ui from "../ui/classNames";
 
 interface Props {
   machines: Machine[];
   jobs: ScheduleJob[];
   maintenanceWindows: MaintenanceWindow[];
+  weekStart: Date;
+  weekEnd: Date;
+  onWeekOffsetChange: React.Dispatch<React.SetStateAction<number>>;
+  isLoading?: boolean;
   onSelectJob?: (job: ScheduleJob) => void;
-  /** Drag a job bar to a new date — called with the job, its (unchanged) machine, and the
-   * new block start once the drag is dropped. The caller is expected to auto-reflow
-   * whatever the move now overlaps (see useProduction's moveJob). */
+  onSelectMaintenance?: (window: MaintenanceWindow) => void;
   onJobMoved?: (jobId: string, machineId: string, newBlockStart: Date) => void;
 }
 
-type Scale = "Daily" | "Weekly";
-type GroupBy = "None" | "Cell" | "Customer";
+const GRID_COLS = "112px minmax(180px,200px) minmax(180px,220px) 64px 150px minmax(340px,1fr)";
 
-type Row =
-  | { kind: "job"; id: string; job: ScheduleJob; machine?: Machine }
-  | { kind: "maintenance"; id: string; window: MaintenanceWindow; machine?: Machine };
-
-const DAY_WIDTH: Record<Scale, number> = { Daily: 34, Weekly: 13 };
-const ROW_H = 42;
-
-// Fixed label-column widths, shared between the header row and every body row so
-// everything lines up regardless of row kind. Widths are numeric (not Tailwind classes)
-// so we can sum them into LABEL_WIDTH for the frozen-column offset.
-const COLS = [
-  { key: "po", label: "PO #", width: 84, align: "" },
-  { key: "customer", label: "Customer", width: 130, align: "" },
-  { key: "itemNo", label: "Item #", width: 96, align: "" },
-  { key: "qty", label: "Qty", width: 68, align: "text-right" },
-  { key: "cell", label: "Machine", width: 64, align: "" },
-  { key: "ship", label: "Ship", width: 76, align: "" },
-] as const;
-
-const LABEL_WIDTH = COLS.reduce((sum, c) => sum + c.width, 0);
-
-const STATUS_TONES: Record<string, { solid: string; light: string }> = {
-  [JobStatus.Planned]: { solid: "#3b4a68", light: "#5c6d90" },
-  [JobStatus.InProgress]: { solid: "#1d6feb", light: "#6fa8ea" },
-  [JobStatus.Done]: { solid: "#16a34a", light: "#5fbf82" },
-};
-
-function startOfDay(d: Date): Date {
-  const c = new Date(d);
-  c.setHours(0, 0, 0, 0);
-  return c;
-}
-function addDays(d: Date, n: number): Date {
-  const c = new Date(d);
-  c.setDate(c.getDate() + n);
-  return c;
-}
-function diffDays(from: Date, to: Date): number {
-  return (to.getTime() - from.getTime()) / 86_400_000;
-}
-function toInputDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
-function fmtShort(d: Date): string {
-  return d.toLocaleDateString(undefined, { day: "2-digit", month: "short" });
-}
-function weekNumber(d: Date): number {
-  const first = new Date(d.getFullYear(), 0, 1);
-  return Math.ceil((diffDays(first, d) + first.getDay() + 1) / 7);
-}
-
-function isOverdue(job: ScheduleJob): boolean {
-  return job.status !== JobStatus.Done && new Date(job.endAt).getTime() > new Date(job.deliveryDate).getTime();
-}
-
-function computeProgressPct(job: ScheduleJob): number {
-  if (job.status === JobStatus.Done) return 100;
-  if (job.status === JobStatus.Planned) return 0;
-  const runStart = new Date(job.startAt).getTime() + job.setupMinutes * 60_000;
-  const runEnd = new Date(job.endAt).getTime();
-  const now = Date.now();
-  if (now <= runStart) return 0;
-  if (now >= runEnd) return 100;
-  return Math.round(((now - runStart) / (runEnd - runStart)) * 100);
-}
-
-const labelRowBase = `flex items-center border-r border-b border-slate-200 text-[0.8rem] text-slate-800`;
-
-/** One label-row cell, sized/aligned to match its header counterpart. */
-function Cell({ col, children }: { col: (typeof COLS)[number]; children: ReactNode }) {
-  return (
-    <div className={ui.cx(col.align, "shrink-0 truncate px-2")} style={{ width: col.width, height: ROW_H }}>
-      {children}
-    </div>
-  );
-}
-
-/**
- * Spreadsheet-style production schedule modeled on the reference PO-line Gantt: a filter
- * bar (date window / cell / scale / group by / search), a fixed set of PO-line columns on
- * the left, and a day-scaled timeline on the right showing each job's setup + run segments.
- * Maintenance/"stopped" windows are their own rows so downtime reads as clearly as a running job.
- */
-export function ScheduleGrid({ machines, jobs, maintenanceWindows, onSelectJob, onJobMoved }: Props) {
-  const today = startOfDay(new Date());
-  const [startDate, setStartDate] = useState(() => toInputDate(addDays(today, -5)));
-  const [endDate, setEndDate] = useState(() => toInputDate(addDays(today, 32)));
-  const [cellFilter, setCellFilter] = useState<string>("All");
-  const [scale, setScale] = useState<Scale>("Daily");
-  const [groupBy, setGroupBy] = useState<GroupBy>("None");
+export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, weekEnd, onWeekOffsetChange, isLoading, onSelectJob, onSelectMaintenance, onJobMoved }: Props) {
+  const [machineId, setMachineId] = useState("All");
   const [search, setSearch] = useState("");
-  const [showAllocation, setShowAllocation] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-
-  const dayWidth = DAY_WIDTH[scale];
-  const rangeStart = startOfDay(new Date(startDate));
-  const rangeEnd = startOfDay(new Date(endDate));
-  const totalDays = Math.max(1, Math.round(diffDays(rangeStart, rangeEnd)) + 1);
-  const timelineWidth = totalDays * dayWidth;
-
-  const machineById = useMemo(() => new Map(machines.map((m) => [m.id, m])), [machines]);
-
-  const days = useMemo(() => Array.from({ length: totalDays }, (_, i) => addDays(rangeStart, i)), [rangeStart, totalDays]);
-
-  const weekBands = useMemo(() => {
-    const bands: { label: string; days: number }[] = [];
-    days.forEach((d) => {
-      const isMonday = d.getDay() === 1;
-      if (bands.length === 0 || isMonday) {
-        bands.push({ label: `${fmtShort(d)} - ${fmtShort(addDays(d, 6))} (#${weekNumber(d)})`, days: 1 });
-      } else {
-        bands[bands.length - 1].days += 1;
-      }
-    });
-    return bands;
-  }, [days]);
-
-  const overlapsRange = (start: string, end: string) =>
-    new Date(end).getTime() >= rangeStart.getTime() && new Date(start).getTime() <= addDays(rangeEnd, 1).getTime();
-
-  const matchesSearch = (haystack: (string | undefined)[]) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return haystack.some((v) => (v ?? "").toLowerCase().includes(q));
+  const headerInnerRef = useRef<HTMLDivElement>(null);
+  const stickySentinelRef = useRef<HTMLDivElement>(null);
+  const [isStuck, setIsStuck] = useState(false);
+  const handleBodyScroll = (event: UIEvent<HTMLDivElement>) => {
+    if (headerInnerRef.current) headerInnerRef.current.style.transform = `translateX(-${event.currentTarget.scrollLeft}px)`;
   };
-
-  const conflictJobIds = useMemo(() => {
-    const ids = new Set<string>();
-    const byMachine = new Map<string, ScheduleJob[]>();
-    jobs.forEach((j) => {
-      const list = byMachine.get(j.machineId) ?? [];
-      list.push(j);
-      byMachine.set(j.machineId, list);
-    });
-    byMachine.forEach((list) => {
-      for (let a = 0; a < list.length; a++) {
-        for (let b = a + 1; b < list.length; b++) {
-          const s1 = new Date(list[a].startAt).getTime();
-          const e1 = new Date(list[a].endAt).getTime();
-          const s2 = new Date(list[b].startAt).getTime();
-          const e2 = new Date(list[b].endAt).getTime();
-          if (s1 < e2 && s2 < e1) {
-            ids.add(list[a].id);
-            ids.add(list[b].id);
-          }
-        }
-      }
-    });
-    return ids;
-  }, [jobs]);
-
-  const rows = useMemo<Row[]>(() => {
-    const jobRows: Row[] = jobs
-      .filter((j) => cellFilter === "All" || j.machineId === cellFilter)
-      .filter((j) => overlapsRange(j.startAt, j.endAt))
-      .filter((j) => matchesSearch([j.sourceOrderRefs, j.customerName, j.itemCode, j.productName]))
-      .map((j) => ({ kind: "job", id: j.id, job: j, machine: machineById.get(j.machineId) }));
-
-    const maintRows: Row[] = maintenanceWindows
-      .filter((w) => cellFilter === "All" || w.machineId === cellFilter)
-      .filter((w) => overlapsRange(w.startAt, w.endAt))
-      .filter((w) => matchesSearch([w.reason, w.type]))
-      .map((w) => ({ kind: "maintenance", id: `maint-${w.id}`, window: w, machine: machineById.get(w.machineId) }));
-
-    const all = [...jobRows, ...maintRows];
-    all.sort((a, b) => {
-      const sa = a.kind === "job" ? a.job.startAt : a.window.startAt;
-      const sb = b.kind === "job" ? b.job.startAt : b.window.startAt;
-      return new Date(sa).getTime() - new Date(sb).getTime();
-    });
-    return all;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobs, maintenanceWindows, cellFilter, search, startDate, endDate, machineById]);
-
-  type RenderItem = { type: "group"; label: string } | { type: "row"; row: Row };
-  const renderItems = useMemo<RenderItem[]>(() => {
-    if (groupBy === "None") return rows.map((row) => ({ type: "row", row }) as RenderItem);
-    const groupLabel = (row: Row): string => {
-      if (groupBy === "Cell") return row.machine?.lineCode ?? "Unassigned";
-      return row.kind === "job" ? row.job.customerName ?? "Unknown customer" : "Maintenance";
-    };
-    const groups = new Map<string, Row[]>();
-    rows.forEach((row) => {
-      const label = groupLabel(row);
-      const list = groups.get(label) ?? [];
-      list.push(row);
-      groups.set(label, list);
-    });
-    const items: RenderItem[] = [];
-    [...groups.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .forEach(([label, list]) => {
-        items.push({ type: "group", label: `${label} · ${list.length}` });
-        list.forEach((row) => items.push({ type: "row", row }));
-      });
-    return items;
-  }, [rows, groupBy]);
-
-  const barLeft = (iso: string) => Math.max(0, diffDays(rangeStart, startOfDay(new Date(iso)))) * dayWidth;
-  const milestoneLeft = (iso: string) => diffDays(rangeStart, new Date(iso)) * dayWidth;
+  useEffect(() => {
+    const node = stickySentinelRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(([entry]) => setIsStuck(!entry.isIntersecting), { rootMargin: "-54px 0px 0px 0px", threshold: 0 });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const machineById = useMemo(() => new Map(machines.map((machine) => [machine.id, machine])), [machines]);
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(date.getDate() + index);
+    return date;
+  });
+  const query = search.trim().toLowerCase();
+  const visibleJobs = jobs.filter((job) =>
+    (machineId === "All" || job.machineId === machineId) &&
+    new Date(job.endAt) > weekStart && new Date(job.startAt) < weekEnd &&
+    (!query || [job.sourceOrderRefs, job.customerName, job.productName, job.itemCode].some((value) => value?.toLowerCase().includes(query)))
+  );
+  const visibleMaintenance = maintenanceWindows.filter((window) =>
+    (machineId === "All" || window.machineId === machineId) &&
+    new Date(window.endAt) > weekStart && new Date(window.startAt) < weekEnd &&
+    (!query || [window.reason, window.type, machineById.get(window.machineId)?.lineCode].some((value) => value?.toLowerCase().includes(query)))
+  );
+  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId)])]
+    .sort((a, b) => (machineById.get(a)?.lineCode ?? "").localeCompare(machineById.get(b)?.lineCode ?? ""));
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-wrap items-end gap-3.5 border-b border-slate-200 bg-slate-50 p-4">
-        <label className="flex flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>Start Date</span>
-          <input className={ui.cx(ui.inputSm, "py-1.5")} type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>End Date</span>
-          <input className={ui.cx(ui.inputSm, "py-1.5")} type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>Cell / Line</span>
-          <Select
-            value={cellFilter}
-            onChange={setCellFilter}
-            buttonClassName={ui.selectButtonSm}
-            options={[{ value: "All", label: "All cells" }, ...machines.map((m) => ({ value: m.id, label: m.lineCode }))]}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>Scale</span>
-          <Select
-            value={scale}
-            onChange={(v) => setScale(v as Scale)}
-            buttonClassName={ui.selectButtonSm}
-            options={[
-              { value: "Daily", label: "Daily" },
-              { value: "Weekly", label: "Weekly" },
-            ]}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>Group By</span>
-          <Select
-            value={groupBy}
-            onChange={(v) => setGroupBy(v as GroupBy)}
-            buttonClassName={ui.selectButtonSm}
-            options={[
-              { value: "None", label: "None" },
-              { value: "Cell", label: "Cell" },
-              { value: "Customer", label: "Customer" },
-            ]}
-          />
-        </label>
-        <label className="flex min-w-[200px] flex-1 flex-col gap-1 text-[0.76rem] font-semibold text-slate-500">
-          <span>Search</span>
-          <div className="flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-slate-400">
-            <Search size={14} />
-            <input
-              className="flex-1 border-none py-1.5 text-sm text-slate-800 focus:outline-none"
-              placeholder="PO# / Customer / Item"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+    <section className="overflow-visible rounded-xl border border-slate-200 bg-white">
+      <div ref={stickySentinelRef} aria-hidden="true" />
+      <div className={ui.cx("sticky top-13.25 z-20 rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
+        <div className="grid grid-cols-1 gap-3 rounded-t-xl border-b border-slate-200 p-4 lg:grid-cols-[220px_150px_1fr] lg:items-end">
+          <div className="text-2xs font-medium text-slate-500">
+            <div>Week</div>
+            <div className="mt-1 grid h-9 grid-cols-[32px_minmax(0,1fr)_32px] items-stretch overflow-hidden rounded-md border border-slate-200 bg-white">
+              <button type="button" className="grid h-full place-items-center border-r border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value - 1)} aria-label="Previous week"><ChevronLeft size={14} /></button>
+              <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 text-2xs font-semibold text-slate-700"><CalendarDays size={13} /><span className="truncate">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
+              <button type="button" className="grid h-full place-items-center border-l border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value + 1)} aria-label="Next week"><ChevronRight size={14} /></button>
+            </div>
           </div>
-        </label>
-        <button
-          type="button"
-          className={ui.cx(ui.btnSecondary, "h-[34px] whitespace-nowrap", showAllocation && "border-blue-500 bg-blue-50 text-blue-600")}
-          onClick={() => setShowAllocation((v) => !v)}
-          title="Highlight cells with overlapping jobs"
-        >
-          <SlidersHorizontal size={14} /> Allocation
-        </button>
+          <label className="text-2xs font-medium text-slate-500">Machine
+            <div className="mt-1"><Select value={machineId} onChange={setMachineId} options={[{ value: "All", label: "All machines" }, ...machines.map((machine) => ({ value: machine.id, label: machine.lineCode }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
+          </label>
+          <label className="justify-self-stretch text-2xs font-medium text-slate-500 lg:w-70 lg:justify-self-end">Search
+            <div className="mt-1 flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3"><Search size={14} className="text-slate-400" /><input className="min-w-0 flex-1 border-0 bg-transparent text-xs text-slate-800 outline-none" placeholder="PO# / Customer / Item" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+          </label>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-slate-200 px-4 py-2.5 text-2xs text-slate-500">
+          {[JobStatus.Open, JobStatus.ProductionProgress, JobStatus.ProductionComplete, JobStatus.ProductionPending]
+            .map((jobStatus): readonly [string, string] => [ui.scheduleToneClass(jobStatus, false), jobStatus])
+            .concat([[ui.scheduleToneClass(undefined, true), "Maintenance"]])
+            .map(([tone, label]) => <span key={label} className="flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-full ${tone}`} />{label}</span>)}
+        </div>
+
+        <div className="overflow-hidden bg-slate-50">
+          <div ref={headerInnerRef} className="grid text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS, width: "max-content", minWidth: "100%" }}>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order ID #</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Customer</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item #</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Ship</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2! pl-3!")}>Schedule</div>
+            <div className="border-b border-l border-slate-200 bg-slate-50">
+              <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
+              <div className="grid grid-cols-7">{days.map((date) => <span key={date.toISOString()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{String(date.getDate()).padStart(2, "0")}</span>)}</div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-[0.78rem] text-slate-500">
-        <span className="flex items-center gap-1.5">
-          <span className="h-[9px] w-3.5 rounded-sm" style={{ background: "linear-gradient(to right, #1d6feb 60%, #6fa8ea 60%)" }} /> In progress
-        </span>
-        <span className="flex items-center gap-1.5"><span className="h-[9px] w-3.5 rounded-sm bg-[#3b4a68]" /> Planned</span>
-        <span className="flex items-center gap-1.5"><span className="h-[9px] w-3.5 rounded-sm bg-green-600" /> Done</span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-[9px] w-3.5 rounded-sm" style={{ background: "repeating-linear-gradient(45deg, #f0a93a, #f0a93a 4px, #d68a12 4px, #d68a12 8px)" }} /> Setup
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-[9px] w-3.5 rounded-sm" style={{ background: "repeating-linear-gradient(45deg, #fbd955, #fbd955 4px, #26282c 4px, #26282c 8px)" }} /> Stopped
-        </span>
-      </div>
-
-      {rows.length === 0 ? (
-        <p className={ui.cx(ui.muted, "p-5")}>No jobs or maintenance windows in this window.</p>
-      ) : (
-        <div className="max-h-[620px] overflow-auto">
-          <div className="relative" style={{ width: LABEL_WIDTH + timelineWidth, minWidth: "100%" }}>
-            {/* Header: sticky top freezes it vertically; the nested label block is also sticky
-             * left so the top-left corner stays pinned in both directions while scrolling. */}
-            <div className="sticky top-0 z-30 flex border-b border-slate-200 bg-slate-50">
-              <div
-                className="sticky left-0 z-10 flex shrink-0 items-center border-r border-slate-200 bg-slate-50"
-                style={{ width: LABEL_WIDTH, height: 58 }}
-              >
-                {COLS.map((col) => (
-                  <div
-                    key={col.key}
-                    style={{ width: col.width }}
-                    className={ui.cx(col.align, "shrink-0 truncate px-2 text-[0.72rem] font-bold tracking-wide text-slate-400 uppercase")}
-                  >
-                    {col.label}
+      <div className="overflow-x-auto rounded-b-xl" onScroll={handleBodyScroll}>
+        <div className="grid text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS, width: "max-content", minWidth: "100%" }}>
+          {isLoading ? (
+            <div role="status" className="col-span-6 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
+          ) : groups.length === 0 ? (
+            <div className="col-span-6 px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
+          ) : groups.map((groupMachineId) => {
+            const groupJobs = visibleJobs.filter((job) => job.machineId === groupMachineId);
+            const groupMaintenance = visibleMaintenance.filter((window) => window.machineId === groupMachineId);
+            const rows = [...groupJobs.map((job) => ({ type: "job" as const, start: job.startAt, job })), ...groupMaintenance.map((window) => ({ type: "maintenance" as const, start: window.startAt, window }))].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+            return (
+              <div className="contents" key={groupMachineId}>
+                <div className="col-span-5 flex h-7 items-center border-b border-slate-200 bg-slate-50 px-2 text-2xs font-semibold text-slate-600">{machineById.get(groupMachineId)?.lineCode ?? "Unassigned"} · {groupJobs.length + groupMaintenance.length}</div>
+                <div className="h-7 border-b border-l border-slate-200 bg-slate-50" />
+                {rows.map((row) => row.type === "job" ? (
+                  <div className="contents group" key={`job-${row.job.id}`}>
+                    <div className="flex min-h-12 items-center truncate border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
+                    <div className="flex min-h-12 items-center whitespace-normal wrap-break-word border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.customerName || "—"}</div>
+                    <div className="flex min-h-12 items-center truncate border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.productName}</div>
+                    <div className="flex min-h-12 items-center whitespace-nowrap border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.deliveryDate ? formatMonthDay(row.job.deliveryDate) : "—"}</div>
+                    <div className="flex min-h-12 flex-col justify-center gap-0.5 whitespace-nowrap border-b border-slate-200 px-2 py-2 pl-3 text-slate-700 group-hover:bg-slate-50">
+                      <span>{formatScheduleDateTime(row.job.startAt)}</span>
+                      <span>{formatScheduleDateTime(row.job.endAt)}</span>
+                    </div>
+                    <ScheduleBar job={row.job} weekStart={weekStart} onSelect={onSelectJob} onMove={onJobMoved} wrapperClassName="border-b border-b-slate-200 group-hover:bg-slate-50" />
+                  </div>
+                ) : (
+                  <div className="contents group" key={`maintenance-${row.window.id}`}>
+                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
+                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
+                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
+                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
+                    <div className="flex min-h-12 flex-col justify-center gap-0.5 whitespace-nowrap border-b border-red-100 bg-red-50 px-2 py-2 pl-3 text-slate-700 group-hover:bg-red-100">
+                      <span>{formatScheduleDateTime(row.window.startAt)}</span>
+                      <span>{formatScheduleDateTime(row.window.endAt)}</span>
+                    </div>
+                    <MaintenanceBar window={row.window} weekStart={weekStart} machine={machineById.get(row.window.machineId)} onSelect={onSelectMaintenance} wrapperClassName="border-b border-b-red-100 bg-red-50 group-hover:bg-red-100" />
                   </div>
                 ))}
               </div>
-              <div className="shrink-0" style={{ width: timelineWidth }}>
-                <div className="flex border-b border-slate-200" style={{ height: 24 }}>
-                  {weekBands.map((band, i) => (
-                    <div
-                      key={i}
-                      className="shrink-0 overflow-hidden border-r border-slate-200 pl-1.5 text-[0.68rem] font-bold whitespace-nowrap text-slate-500"
-                      style={{ width: band.days * dayWidth }}
-                    >
-                      {band.label}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex" style={{ height: 34 }}>
-                  {days.map((d, i) => (
-                    <div
-                      key={i}
-                      className={ui.cx(
-                        "flex shrink-0 items-center justify-center border-r border-slate-100 text-[0.7rem] text-slate-500",
-                        (d.getDay() === 0 || d.getDay() === 6) && "bg-slate-50"
-                      )}
-                      style={{ width: dayWidth }}
-                    >
-                      {scale === "Daily" ? String(d.getDate()).padStart(2, "0") : d.getDate() % 7 === 1 ? String(d.getDate()).padStart(2, "0") : ""}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute top-0 bottom-0 w-0.5 bg-blue-600" style={{ left: LABEL_WIDTH + milestoneLeft(today.toISOString()) }} />
-
-            {renderItems.map((item, i) => {
-              if (item.type === "group") {
-                return (
-                  <div key={`g-${i}`} className="flex border-b border-slate-200 bg-slate-50" style={{ height: 30 }}>
-                    <div
-                      className="sticky left-0 z-10 flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-[0.72rem] font-bold tracking-wide text-slate-500 uppercase"
-                      style={{ width: LABEL_WIDTH }}
-                    >
-                      {item.label}
-                    </div>
-                    <div className="shrink-0 bg-slate-50" style={{ width: timelineWidth }} />
-                  </div>
-                );
-              }
-              const row = item.row;
-              if (row.kind === "job") {
-                const job = row.job;
-                const conflict = showAllocation && conflictJobIds.has(row.id);
-                const selected = selectedJobId === row.id;
-                return (
-                  <div key={row.id} className="flex">
-                    <div
-                      className={ui.cx(
-                        labelRowBase,
-                        "sticky left-0 z-10 shrink-0 cursor-pointer bg-white hover:bg-blue-50",
-                        conflict && "bg-red-50",
-                        selected && "bg-blue-100 ring-1 ring-inset ring-blue-400"
-                      )}
-                      style={{ width: LABEL_WIDTH }}
-                      onClick={() => {
-                        setSelectedJobId(job.id);
-                        onSelectJob?.(job);
-                      }}
-                    >
-                      <Cell col={COLS[0]}>{job.sourceOrderRefs ?? "—"}</Cell>
-                      <Cell col={COLS[1]}>{job.customerName ?? "—"}</Cell>
-                      <Cell col={COLS[2]}>{job.productName}</Cell>
-                      <Cell col={COLS[3]}>{job.qty.toLocaleString()}</Cell>
-                      <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
-                      <Cell col={COLS[5]}>{job.ship1Date ? new Date(job.ship1Date).toLocaleDateString(undefined, { day: "2-digit", month: "short" }) : "—"}</Cell>
-                    </div>
-                    <div className="shrink-0" style={{ width: timelineWidth }}>
-                      <ScheduleJobBar
-                        job={row.job}
-                        barLeft={barLeft}
-                        dayWidth={dayWidth}
-                        conflict={conflict}
-                        selected={selected}
-                        onDragCommit={onJobMoved ? (j, newStart) => onJobMoved(j.id, j.machineId, newStart) : undefined}
-                      />
-                    </div>
-                  </div>
-                );
-              }
-              return (
-                <div key={row.id} className="flex">
-                  <div className={ui.cx(labelRowBase, "sticky left-0 z-10 shrink-0 cursor-default bg-white text-slate-500 italic")} style={{ width: LABEL_WIDTH }}>
-                    <Cell col={COLS[0]}>—</Cell>
-                    <Cell col={COLS[1]}>—</Cell>
-                    <Cell col={COLS[2]}>—</Cell>
-                    <Cell col={COLS[3]}>Stopped — {row.window.reason ?? row.window.type}</Cell>
-                    <Cell col={COLS[4]}>{row.machine?.lineCode ?? "—"}</Cell>
-                    <Cell col={COLS[5]}>—</Cell>
-                  </div>
-                  <div className="relative shrink-0 border-b border-slate-200" style={{ width: timelineWidth, height: ROW_H }}>
-                    <div
-                      className="absolute flex items-center justify-center rounded-md text-[0.72rem] font-bold text-slate-900"
-                      style={{
-                        top: 7,
-                        height: 28,
-                        left: barLeft(row.window.startAt),
-                        width: Math.max(6, diffDays(new Date(row.window.startAt), new Date(row.window.endAt)) * dayWidth),
-                        background: "repeating-linear-gradient(45deg, #fbd955, #fbd955 8px, #26282c 8px, #26282c 16px)",
-                      }}
-                    >
-                      Stopped
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+            );
+          })}
         </div>
-      )}
-    </div>
+      </div>
+    </section>
   );
 }
 
-function ScheduleJobBar({
-  job,
-  barLeft,
-  dayWidth,
-  conflict,
-  selected,
-  onDragCommit,
-}: {
-  job: ScheduleJob;
-  barLeft: (iso: string) => number;
-  dayWidth: number;
-  conflict: boolean;
-  selected: boolean;
-  onDragCommit?: (job: ScheduleJob, newBlockStart: Date) => void;
-}) {
-  const [dragPx, setDragPx] = useState<number | null>(null);
 
-  const blockStart = new Date(job.startAt);
-  const runStart = new Date(blockStart.getTime() + job.setupMinutes * 60_000);
-  const blockEnd = new Date(job.endAt);
-  const totalDurationDays = Math.max(diffDays(blockStart, blockEnd), 4 / 24);
-  const setupDurationDays = job.setupMinutes > 0 ? diffDays(blockStart, runStart) : 0;
-  const tone = STATUS_TONES[job.status] ?? STATUS_TONES[JobStatus.Planned];
-  const pct = computeProgressPct(job);
-  const late = isOverdue(job);
-
-  const draggable = !!onDragCommit && job.status !== JobStatus.Done;
-
-  const width = Math.max(6, totalDurationDays * dayWidth);
-  const setupWidth = setupDurationDays * dayWidth;
-  const left = barLeft(job.startAt) + (dragPx ?? 0);
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (!draggable || !onDragCommit) return;
-    e.preventDefault();
-    const startX = e.clientX;
-    let latestDeltaPx = 0;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "grabbing";
-
-    const handleMouseMove = (ev: MouseEvent) => {
-      latestDeltaPx = ev.clientX - startX;
-      setDragPx(latestDeltaPx);
-    };
-    const handleMouseUp = () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      setDragPx(null);
-      const deltaDays = Math.round(latestDeltaPx / dayWidth);
-      if (deltaDays !== 0) {
-        onDragCommit(job, addDays(blockStart, deltaDays));
-      }
-    };
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-  };
+function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { job: ScheduleJob; weekStart: Date; onSelect?: (job: ScheduleJob) => void; onMove?: (jobId: string, machineId: string, start: Date) => void; wrapperClassName?: string }) {
+  const moved = useRef(false);
+  const start = new Date(job.startAt);
+  const end = new Date(job.endAt);
+  const movable = !!onMove && (job.status === JobStatus.Open || job.status === JobStatus.ProductionPending) && !job.isLocked;
+  const tone = ui.scheduleToneClass(job.status, false);
 
   return (
-    <div className={ui.cx("relative border-b border-slate-200", conflict && "bg-red-50", selected && "bg-blue-50")} style={{ height: ROW_H }}>
-      <div
-        className={ui.cx(
-          "absolute flex overflow-hidden rounded-md shadow-sm",
-          job.status === JobStatus.Done && "opacity-60",
-          late && "ring-2 ring-red-600",
-          selected && "ring-2 ring-blue-600",
-          draggable && "cursor-grab hover:ring-2 hover:ring-blue-600",
-          dragPx !== null && "z-30 cursor-grabbing opacity-80 shadow-lg"
-        )}
-        style={{ top: 7, height: 28, left, width }}
-        onMouseDown={handleMouseDown}
-      >
-        {setupWidth > 0 && (
-          <div
-            className="shrink-0 rounded-l-md"
-            style={{ width: setupWidth, background: "repeating-linear-gradient(45deg, #f0a93a, #f0a93a 7px, #d68a12 7px, #d68a12 14px)" }}
-            title={`Setup — ${job.setupMinutes} min`}
-          />
-        )}
-        <div
-          className="flex items-center overflow-hidden px-1.5 text-[0.74rem] font-semibold text-white"
-          style={{
-            marginLeft: setupWidth,
-            width: width - setupWidth,
-            background: `linear-gradient(to right, ${tone.solid} ${pct}%, ${tone.light} ${pct}%)`,
-          }}
-          title={`${job.productName}\nQty: ${job.qty.toLocaleString()}\n${job.status} · ${pct}%${draggable ? "\nDrag to reschedule" : ""}`}
-        >
-          <span className="truncate">{job.productName} · {pct}%</span>
-        </div>
-      </div>
-    </div>
+    <ScheduleBlock
+      start={start}
+      end={end}
+      weekStart={weekStart}
+      title={job.productName}
+      subtitle={`Qty ${job.qty.toLocaleString()}`}
+      locked={job.isLocked}
+      toneClassName={tone}
+      testId={`schedule-job-${job.id}`}
+      wrapperClassName={wrapperClassName}
+      borderClassName="border-slate-200"
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!movable) onSelect?.(job);
+      }}
+      onPointerDown={!movable ? undefined : (event) => {
+        event.preventDefault();
+        const element = event.currentTarget;
+        const startX = event.clientX;
+        const timelineWidth = element.parentElement?.clientWidth || 1;
+        const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+        moved.current = false;
+        const pointerMove = (moveEvent: PointerEvent) => {
+          const delta = moveEvent.clientX - startX;
+          moved.current ||= Math.abs(delta) > 3;
+          element.style.transform = `translateX(${delta}px)`;
+        };
+        const pointerUp = (upEvent: PointerEvent) => {
+          window.removeEventListener("pointermove", pointerMove);
+          window.removeEventListener("pointerup", pointerUp);
+          window.removeEventListener("pointercancel", pointerCancel);
+          element.style.transform = "translateX(0)";
+          const currentDay = Math.floor((startDay - weekStart.getTime()) / 86400000);
+          const targetDay = Math.max(0, Math.min(6, currentDay + Math.round((upEvent.clientX - startX) / (timelineWidth / 7))));
+          if (targetDay !== currentDay) {
+            const next = new Date(start);
+            next.setFullYear(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + targetDay);
+            onMove?.(job.id, job.machineId, next);
+          } else if (!moved.current) onSelect?.(job);
+        };
+        const pointerCancel = () => {
+          window.removeEventListener("pointermove", pointerMove);
+          window.removeEventListener("pointerup", pointerUp);
+          window.removeEventListener("pointercancel", pointerCancel);
+          element.style.transform = "translateX(0)";
+        };
+        window.addEventListener("pointermove", pointerMove);
+        window.addEventListener("pointerup", pointerUp);
+        window.addEventListener("pointercancel", pointerCancel);
+      }}
+    />
+  );
+}
+
+function MaintenanceBar({ window, weekStart, machine, onSelect, wrapperClassName }: { window: MaintenanceWindow; weekStart: Date; machine?: Machine; onSelect?: (window: MaintenanceWindow) => void; wrapperClassName?: string }) {
+  const machineLabel = machine ? `${machine.name} - ${machine.machineType}` : "Machine";
+
+  return (
+    <ScheduleBlock
+      start={new Date(window.startAt)}
+      end={new Date(window.endAt)}
+      weekStart={weekStart}
+      title={window.reason || "Maintenance"}
+      subtitle={machineLabel}
+      toneClassName="bg-red-500"
+      className="min-w-9"
+      wrapperClassName={wrapperClassName}
+      borderClassName="border-red-100"
+      onClick={(event) => { event.stopPropagation(); onSelect?.(window); }}
+    />
   );
 }
