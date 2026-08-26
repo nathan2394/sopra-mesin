@@ -369,7 +369,7 @@ export function useProduction(options: ProductionOptions = {}) {
     };
   }, []);
 
-  const applyOptimizationResponse = useCallback(async (orders: Order[], optimized: OptimizedSchedule) => {
+  const applyOptimizationResponse = useCallback(async (orders: Order[], optimized: OptimizedSchedule, optimizedItemIds: number[]) => {
     try {
       const [allJobs, existingMaintenance] = await Promise.all([
         api<ApiJob[]>("/schedules"),
@@ -380,6 +380,8 @@ export function useProduction(options: ProductionOptions = {}) {
         .filter((job) => job.isLocked || job.status !== "Open")
         .flatMap((job) => job.orders.map((order) => [order.orderLineId, job] as const)));
       const protectedScheduleIds = new Set([...protectedJobsByItemId.values()].map((job) => job.id));
+      const optimizedItemIdSet = new Set(optimizedItemIds);
+      const returnedItemIds = new Set(optimized.orderSchedules.map((row) => row.itemId));
       const claimedScheduleIds = new Set<number>();
 
       const schedules = optimized.orderSchedules.flatMap((result) => {
@@ -420,16 +422,18 @@ export function useProduction(options: ProductionOptions = {}) {
         return [{ id: scheduleId, ...body }];
       });
 
-      const optimizedRows = [...optimized.orderSchedules, ...optimized.maintenanceSchedules];
-      const optimizedMachineIds = new Set(optimizedRows.map((row) => row.machineId));
-      const horizonStart = Math.min(...optimizedRows.map((row) => Date.parse(row.startAt)));
-      const horizonEnd = Math.max(...optimizedRows.map((row) => Date.parse(row.endAt)));
+      const replaceableScheduleIds = new Set(allJobs.filter((job) =>
+        !job.isMaintenance &&
+        !protectedScheduleIds.has(job.id) &&
+        job.orders.some((order) => optimizedItemIdSet.has(order.orderLineId))
+      ).map((job) => job.id));
+      const deleteScheduleIds = allJobs.filter((job) =>
+        replaceableScheduleIds.has(job.id) &&
+        !job.orders.some((order) => returnedItemIds.has(order.orderLineId))
+      ).map((job) => job.id);
       const replacedSetup = existingMaintenance.filter((row) =>
         row.type === "Setup Maintenance" &&
-        !protectedScheduleIds.has(row.affectedScheduleId ?? 0) &&
-        optimizedMachineIds.has(row.machineId) &&
-        Date.parse(row.endAt) > horizonStart &&
-        Date.parse(row.startAt) < horizonEnd
+        replaceableScheduleIds.has(row.affectedScheduleId ?? 0)
       );
       const maintenance = optimized.maintenanceSchedules.flatMap(({ maintenanceId: _, type, ...result }) => {
         const normalizedType = `${type.charAt(0).toUpperCase()}${type.slice(1).toLowerCase()} Maintenance`;
@@ -457,13 +461,14 @@ export function useProduction(options: ProductionOptions = {}) {
         method: "POST",
         body: JSON.stringify({
           schedules,
+          deleteScheduleIds,
           deleteMaintenanceIds: replacedSetup.map((row) => row.id),
           maintenanceSchedules: maintenance,
         }),
       });
 
       await Promise.all([refreshSchedules(), refreshMaintenance()]);
-      notify("success", `Optimization applied: ${schedules.length} items and ${maintenance.length} maintenance windows.`);
+      notify("success", `Optimization applied: ${schedules.length} items, ${deleteScheduleIds.length} schedules removed, and ${maintenance.length} maintenance windows.`);
       return true;
     } catch (cause) { report(cause); return false; }
   }, [refreshMaintenance, refreshSchedules]);

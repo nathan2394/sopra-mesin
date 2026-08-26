@@ -55,6 +55,8 @@ export function SchedulePage() {
   const [optimizationStage, setOptimizationStage] = useState<"request" | "apply" | null>(null);
   const [optimizationConfirmation, setOptimizationConfirmation] = useState<{
     orders: Order[];
+    optimizedItemIds: number[];
+    deleteCount: number;
     candidate: OptimizedSchedule;
   } | null>(null);
 
@@ -153,7 +155,16 @@ export function SchedulePage() {
       if (!response.ok) throw new Error(`AI optimization failed (${response.status}).`);
       const candidates = parseOptimizationResponse(await response.json() as unknown);
       const candidate = candidates[0];
-      setOptimizationConfirmation({ orders, candidate });
+      const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
+      const deleteCount = new Set(payload.orders
+        .filter((row) => row.scheduleId && !returnedItemIds.has(row.itemId))
+        .map((row) => row.scheduleId)).size;
+      setOptimizationConfirmation({
+        orders,
+        optimizedItemIds: payload.orders.map((row) => row.itemId),
+        deleteCount,
+        candidate,
+      });
     } catch (cause) {
       notify("error", cause instanceof DOMException && cause.name === "TimeoutError"
         ? "AI optimization timed out after 5 minutes."
@@ -171,7 +182,7 @@ export function SchedulePage() {
     setApplyingOptimization(true);
     setOptimizationStage("apply");
     try {
-      await applyOptimizationResponse(confirmation.orders, confirmation.candidate);
+      await applyOptimizationResponse(confirmation.orders, confirmation.candidate, confirmation.optimizedItemIds);
     } finally {
       setApplyingOptimization(false);
       setOptimizationStage(null);
@@ -230,7 +241,7 @@ export function SchedulePage() {
             <div className="notification-content">
               <div className="notification-copy">
                 <h2 id="optimization-confirm-title" className="text-xl font-bold tracking-tight text-slate-900">Apply optimized schedule?</h2>
-                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">Apply {optimizationConfirmation.candidate.orderSchedules.length} item schedules and {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance windows.</p>
+                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">Apply {optimizationConfirmation.candidate.orderSchedules.length} item schedules, remove {optimizationConfirmation.deleteCount} omitted schedules, and apply {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance windows.</p>
               </div>
               <div className="flex justify-center gap-2">
                 <button type="button" className={`${ui.btnSecondary} min-w-24 justify-center px-5 py-2.5 text-sm`} onClick={() => setOptimizationConfirmation(null)}>Cancel</button>
