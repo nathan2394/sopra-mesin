@@ -17,8 +17,6 @@ import type { OptimizedSchedule } from "../utils/optimization";
 type ApiMachine = Omit<Machine, "id"> & { id: number };
 type ApiWindow = Omit<MaintenanceWindow, "id" | "machineId" | "affectedScheduleId"> & { id: number; machineId: number; affectedScheduleId?: number };
 type StoredJob = ScheduleJob & {
-  setupPercent: number;
-  progressPercent: number;
   reason?: string;
   purchaseOrderNumber?: string;
   orderLineId?: number;
@@ -34,9 +32,6 @@ interface ApiJob {
   preform?: string;
   cavity?: number;
   quantity: number;
-  setupPercent: number;
-  progressPercent: number;
-  setupMinutes: number;
   startsAt: string;
   endsAt: string;
   deliveryDate?: string;
@@ -72,14 +67,11 @@ const jobFromApi = (job: ApiJob): StoredJob => ({
   qty: job.quantity,
   startAt: job.startsAt,
   endAt: job.endsAt,
-  setupMinutes: job.setupMinutes,
   deliveryDate: job.deliveryDate ?? job.endsAt,
   sourceOrderRefs: job.order?.orderNumber,
   status: job.status,
   customerName: job.order?.customerName,
   itemCode: job.order?.itemCode,
-  setupPercent: job.setupPercent,
-  progressPercent: job.progressPercent,
   reason: job.reason,
   purchaseOrderNumber: job.order?.purchaseOrderNumber,
   blockingMaintenanceId: job.blockingMaintenanceId ? String(job.blockingMaintenanceId) : undefined,
@@ -94,9 +86,6 @@ const jobBody = (job: StoredJob) => ({
   preform: job.preform,
   cavity: job.cavity,
   quantity: job.qty,
-  setupPercent: job.setupPercent,
-  progressPercent: job.progressPercent,
-  setupMinutes: job.setupMinutes,
   startsAt: job.startAt,
   endsAt: job.endAt,
   deliveryDate: job.deliveryDate.slice(0, 10),
@@ -417,9 +406,6 @@ export function useProduction(options: ProductionOptions = {}) {
           preform: result.preform,
           cavity: result.cavity,
           quantity: item.qty,
-          setupPercent: current?.setupPercent ?? 0,
-          progressPercent: current?.progressPercent ?? 0,
-          setupMinutes: current?.setupMinutes ?? 0,
           startsAt: result.startAt,
           endsAt: result.endAt,
           deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
