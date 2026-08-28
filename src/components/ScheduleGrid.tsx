@@ -20,7 +20,7 @@ interface Props {
   onJobMoved?: (jobId: string, machineId: string, newBlockStart: Date) => void;
 }
 
-const INFO_COLS = "minmax(0,8fr) minmax(0,10fr) minmax(0,10fr) minmax(0,17fr)";
+const INFO_COLS = "minmax(0,8fr) minmax(0,8fr) minmax(0,10fr) minmax(0,19fr)";
 const GRID_COLS = `${INFO_COLS} minmax(0,55fr)`;
 
 export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, weekEnd, onWeekOffsetChange, isLoading, onSelectJob, onSelectMaintenance, onJobMoved }: Props) {
