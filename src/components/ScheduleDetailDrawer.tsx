@@ -44,6 +44,10 @@ function DrawerDateTime({ value }: { value: string }) {
   return <><span className="hidden sm:inline">{displayDateTime(value)}</span><span className="sm:hidden"><span className="block">{formatDate(value)}</span><span className="mt-0.5 block text-slate-500">{displayTime(value)}</span></span></>;
 }
 
+function TimelinePoint({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><p className="text-13 text-slate-400">{label}</p><p className="mt-1 text-13 font-semibold text-slate-950"><DrawerDateTime value={value} /></p></div>;
+}
+
 function LockIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 13 13" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -141,7 +145,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             </div>
           )}
 
-          <div className={`grid gap-2 border-b border-slate-200 pb-5 ${!isMaintenance && canEditSchedule ? "grid-cols-1 sm:grid-cols-[1fr_40px_1fr] sm:items-end" : "grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-end"}`}>
+          <div className={`grid gap-2 rounded-lg border-b border-slate-200 bg-white p-4 ${!isMaintenance && canEditSchedule ? "grid-cols-1 sm:grid-cols-[1fr_40px_1fr] sm:items-end" : "grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-end"}`}>
             <div>
               <p className="text-13 text-slate-400">{isMaintenance ? "Start Maintenance" : "Start Production"}</p>
               {!isMaintenance && canEditSchedule ? (
@@ -176,9 +180,9 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               </div>
               {setupMaintenance ? (
                 <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
-                  <div><p className="text-2xs text-slate-400">Start Setup</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={setupMaintenance.startAt} /></p></div>
+                  <TimelinePoint label="Start Setup" value={setupMaintenance.startAt} />
                   <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                  <div><p className="text-2xs text-slate-400">End Setup</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={setupMaintenance.endAt} /></p></div>
+                  <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">No setup maintenance linked to this order.</p>}
             </div>
@@ -194,9 +198,9 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   </div>
                   {linkedJob ? (
                     <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
-                      <div><p className="text-2xs text-slate-400">Start Production</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={linkedJob.startAt} /></p></div>
+                      <TimelinePoint label="Start Production" value={linkedJob.startAt} />
                       <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                      <div><p className="text-2xs text-slate-400">End Production</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={linkedJob.endAt} /></p></div>
+                      <TimelinePoint label="End Production" value={linkedJob.endAt} />
                     </div>
                   ) : <p className="mt-2 text-xs text-slate-500">No order linked to this maintenance.</p>}
                 </div>
@@ -211,14 +215,14 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                     <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>
                   </div>
                   <div className="mt-3">
-                    <p className="text-2xs text-slate-400">Reason</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-800">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
+                    <p className="text-13 text-slate-400">Reason</p>
+                    <p className="mt-1 text-13 font-semibold text-slate-950">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
                   </div>
                   {linkedCorrectiveMaintenance && (
                     <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
-                      <div><p className="text-2xs text-slate-400">Start Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={linkedCorrectiveMaintenance.startAt} /></p></div>
+                      <TimelinePoint label="Start Corrective" value={linkedCorrectiveMaintenance.startAt} />
                       <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                      <div><p className="text-2xs text-slate-400">End Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800"><DrawerDateTime value={linkedCorrectiveMaintenance.endAt} /></p></div>
+                      <TimelinePoint label="End Corrective" value={linkedCorrectiveMaintenance.endAt} />
                     </div>
                   )}
                 </>
