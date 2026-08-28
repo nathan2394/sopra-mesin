@@ -87,7 +87,6 @@ export interface ScheduleJob {
   qty: number;
   startAt: string;
   endAt: string;
-  setupMinutes: number;
   deliveryDate: string;
   sourceOrderRefs?: string;
   status: JobStatus;

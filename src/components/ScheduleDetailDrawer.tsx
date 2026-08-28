@@ -38,6 +38,15 @@ const inputTime = (value: string) => {
 
 const mergeDateTime = (date: string, time: string) => `${date}T${time}:00`;
 const displayDateTime = (value: string) => `${formatDateTime(value)} WIB`;
+const displayTime = (value: string) => `${new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })} WIB`;
+
+function DrawerDateTime({ value }: { value: string }) {
+  return <><span className="hidden sm:inline">{displayDateTime(value)}</span><span className="sm:hidden"><span className="block">{formatDate(value)}</span><span className="mt-0.5 block text-slate-500">{displayTime(value)}</span></span></>;
+}
+
+function TimelinePoint({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><p className="text-13 text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold text-slate-950"><DrawerDateTime value={value} /></p></div>;
+}
 
 function LockIcon() {
   return (
@@ -78,8 +87,9 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
   const canEditSchedule = canEdit && !locked && !!job;
-  const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const isMaintenance = !!maintenance;
+  const canSave = !isMaintenance && !isComplete && (canEdit || !hasActiveCorrective);
+  const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const status = isMaintenance ? maintenance?.type ?? "Maintenance" : job?.status ?? JobStatus.Open;
   const statusClass = ui.scheduleToneClass(job?.status, isMaintenance);
 
@@ -114,14 +124,14 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               </div>
 
               <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
-                <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
-                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
-                <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
-                <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Delivery Due</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? formatDate(job.deliveryDate) : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-base font-semibold text-slate-950">{orderRef || "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
+                <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Delivery Due</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? formatDate(job.deliveryDate) : "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-sm font-semibold text-slate-950">{orderRef || "-"}</p></div>
               </div>
             </>
           )}
@@ -136,7 +146,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             </div>
           )}
 
-          <div className="grid grid-cols-[1fr_40px_1fr] items-end gap-2 border-b border-slate-200 pb-5">
+          <div className={`grid gap-2 rounded-lg border-b border-slate-200 bg-white p-4 ${!isMaintenance && canEditSchedule ? "grid-cols-1 sm:grid-cols-[1fr_40px_1fr] sm:items-end" : "grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-end"}`}>
             <div>
               <p className="text-13 text-slate-400">{isMaintenance ? "Start Maintenance" : "Start Production"}</p>
               {!isMaintenance && canEditSchedule ? (
@@ -145,10 +155,10 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
-                <p className="mt-1 whitespace-nowrap text-13 font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? displayDateTime(maintenance.startAt) : "-") : (job?.startAt ? displayDateTime(job.startAt) : "-")}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
               )}
             </div>
-            <span className={`justify-self-center text-slate-900 ${!isMaintenance && canEditSchedule ? "flex h-19 items-center self-center" : "flex items-center self-center"}`}><ArrowIcon /></span>
+            <span className={`flex items-center justify-self-center self-center text-slate-900 ${!isMaintenance && canEditSchedule ? "rotate-90 sm:h-19 sm:rotate-0" : ""}`}><ArrowIcon /></span>
             <div>
               <p className="text-13 text-slate-400">{isMaintenance ? "End Maintenance" : "End Production"}</p>
               {!isMaintenance && canEditSchedule ? (
@@ -157,7 +167,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
-                <p className="mt-1 whitespace-nowrap text-13 font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? displayDateTime(maintenance.endAt) : "-") : (job?.endAt ? displayDateTime(job.endAt) : "-")}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
               )}
             </div>
           </div>
@@ -165,15 +175,15 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
 
           {!isMaintenance && (
             <div className="rounded-lg bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                 <span className="text-sm font-semibold text-slate-900">Setup Maintenance</span>
-                {setupMaintenance && <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
+                {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
               </div>
               {setupMaintenance ? (
-                <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
-                  <div><p className="text-2xs text-slate-400">Start Setup</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(setupMaintenance.startAt)}</p></div>
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
+                  <TimelinePoint label="Start Setup" value={setupMaintenance.startAt} />
                   <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                  <div><p className="text-2xs text-slate-400">End Setup</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(setupMaintenance.endAt)}</p></div>
+                  <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">No setup maintenance linked to this order.</p>}
             </div>
@@ -183,15 +193,15 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             <>
               {(maintenance?.type === MaintenanceType.Setup || maintenance?.type === MaintenanceType.Corrective) && (
                 <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <span className="text-sm font-semibold text-slate-900">{linkedJob ? `Order ${linkedJob.sourceOrderRefs ?? linkedJob.id}` : "Linked Order"}</span>
-                    {linkedJob && <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this maintenance</span>}
+                    {linkedJob && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this maintenance</span>}
                   </div>
                   {linkedJob ? (
-                    <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
-                      <div><p className="text-2xs text-slate-400">Start Production</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedJob.startAt)}</p></div>
+                    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
+                      <TimelinePoint label="Start Production" value={linkedJob.startAt} />
                       <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                      <div><p className="text-2xs text-slate-400">End Production</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedJob.endAt)}</p></div>
+                      <TimelinePoint label="End Production" value={linkedJob.endAt} />
                     </div>
                   ) : <p className="mt-2 text-xs text-slate-500">No order linked to this maintenance.</p>}
                 </div>
@@ -201,19 +211,19 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             <div className="rounded-lg bg-slate-50 p-4">
               {hasActiveCorrective ? (
                 <>
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
                     <span className="text-sm font-semibold text-slate-900">Corrective Maintenance</span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>
                   </div>
                   <div className="mt-3">
-                    <p className="text-2xs text-slate-400">Reason</p>
-                    <p className="mt-1 text-xs font-semibold text-slate-800">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
+                    <p className="text-13 text-slate-400">Reason</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
                   </div>
                   {linkedCorrectiveMaintenance && (
-                    <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
-                      <div><p className="text-2xs text-slate-400">Start Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedCorrectiveMaintenance.startAt)}</p></div>
+                    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
+                      <TimelinePoint label="Start Corrective" value={linkedCorrectiveMaintenance.startAt} />
                       <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                      <div><p className="text-2xs text-slate-400">End Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedCorrectiveMaintenance.endAt)}</p></div>
+                      <TimelinePoint label="End Corrective" value={linkedCorrectiveMaintenance.endAt} />
                     </div>
                   )}
                 </>
@@ -244,7 +254,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
 
           <div className="flex justify-end gap-2">
             <button type="button" className={ui.btnSecondary} onClick={onClose}>Back</button>
-            {!isComplete && <button type="button" disabled={isMaintenance || invalidSchedule} className={ui.btnPrimary} onClick={async () => {
+            {canSave && <button type="button" disabled={invalidSchedule} className={ui.btnPrimary} onClick={async () => {
               const saved = await onSave?.({
                 isLocked: locked,
                 startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined,

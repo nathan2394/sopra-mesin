@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bell, CheckCircle2, ChevronDown, Clock3, LoaderCircle, LogOut, PanelLeftClose, PanelLeftOpen, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, Clock3, LoaderCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { currentUsername, logout } from "../api/client";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
@@ -7,9 +7,10 @@ import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
 interface Props {
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  onOpenMobile: () => void;
 }
 
-export function Topbar({ collapsed, onToggleCollapsed }: Props) {
+export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
   const username = currentUsername();
   const notificationRef = useRef<HTMLDetailsElement>(null);
   const email = username.includes("@") ? username : `${username}@sopra.id`;
@@ -40,11 +41,15 @@ export function Topbar({ collapsed, onToggleCollapsed }: Props) {
 
   return (
     <header className="sticky top-0 z-10 flex h-13.25 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
+      <button type="button" onClick={onOpenMobile} aria-label="Open menu" className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 lg:hidden">
+        <Menu size={15} />
+        <span>Menu</span>
+      </button>
       <button
         type="button"
         onClick={onToggleCollapsed}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"
+        className="hidden items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 lg:flex"
       >
         {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
         <span>{collapsed ? "Expand" : "Collapse"}</span>
