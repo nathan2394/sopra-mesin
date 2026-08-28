@@ -45,7 +45,7 @@ function DrawerDateTime({ value }: { value: string }) {
 }
 
 function TimelinePoint({ label, value }: { label: string; value: string }) {
-  return <div className="min-w-0"><p className="text-13 text-slate-400">{label}</p><p className="mt-1 text-13 font-semibold text-slate-950"><DrawerDateTime value={value} /></p></div>;
+  return <div className="min-w-0"><p className="text-13 text-slate-400">{label}</p><p className="mt-1 text-sm font-semibold text-slate-950"><DrawerDateTime value={value} /></p></div>;
 }
 
 function LockIcon() {
@@ -123,14 +123,14 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               </div>
 
               <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
-                <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
-                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
-                <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
-                <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Delivery Due</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? formatDate(job.deliveryDate) : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-base font-semibold text-slate-950">{orderRef || "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
+                <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Delivery Due</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? formatDate(job.deliveryDate) : "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-sm font-semibold text-slate-950">{orderRef || "-"}</p></div>
               </div>
             </>
           )}
@@ -154,7 +154,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
-                <p className="mt-1 text-13 font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
               )}
             </div>
             <span className={`flex items-center justify-self-center self-center text-slate-900 ${!isMaintenance && canEditSchedule ? "rotate-90 sm:h-19 sm:rotate-0" : ""}`}><ArrowIcon /></span>
@@ -166,7 +166,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
-                <p className="mt-1 text-13 font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
+                <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
               )}
             </div>
           </div>
@@ -216,7 +216,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   </div>
                   <div className="mt-3">
                     <p className="text-13 text-slate-400">Reason</p>
-                    <p className="mt-1 text-13 font-semibold text-slate-950">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-950">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
                   </div>
                   {linkedCorrectiveMaintenance && (
                     <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
