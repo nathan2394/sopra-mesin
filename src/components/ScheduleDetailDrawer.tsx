@@ -87,8 +87,9 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
   const canEditSchedule = canEdit && !locked && !!job;
-  const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const isMaintenance = !!maintenance;
+  const canSave = !isMaintenance && !isComplete && (canEdit || !hasActiveCorrective);
+  const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const status = isMaintenance ? maintenance?.type ?? "Maintenance" : job?.status ?? JobStatus.Open;
   const statusClass = ui.scheduleToneClass(job?.status, isMaintenance);
 
@@ -253,7 +254,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
 
           <div className="flex justify-end gap-2">
             <button type="button" className={ui.btnSecondary} onClick={onClose}>Back</button>
-            {!isComplete && <button type="button" disabled={isMaintenance || invalidSchedule} className={ui.btnPrimary} onClick={async () => {
+            {canSave && <button type="button" disabled={invalidSchedule} className={ui.btnPrimary} onClick={async () => {
               const saved = await onSave?.({
                 isLocked: locked,
                 startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined,
