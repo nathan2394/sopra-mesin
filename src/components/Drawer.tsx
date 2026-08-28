@@ -60,7 +60,7 @@ export function Drawer({
         aria-label={ariaLabel ?? title}
         className={`drawer-panel absolute inset-y-0 right-0 w-full overflow-y-auto overscroll-contain border-l border-slate-200 bg-white ${widthClassName}`}
       >
-        <header className="border-b border-slate-200 px-5 py-5">
+        <header className="border-b border-slate-200 px-4 py-5 sm:px-5">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold tracking-tight text-slate-900">
@@ -85,7 +85,7 @@ export function Drawer({
           </div>
         </header>
 
-        <div className="space-y-5 px-6 py-4">
+        <div className="space-y-5 px-4 py-4 sm:px-6">
           {children}
         </div>
       </aside>
