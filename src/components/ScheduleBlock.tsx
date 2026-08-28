@@ -61,14 +61,14 @@ export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, 
   const style: CSSProperties = { left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` };
 
   return (
-    <div className={`relative min-h-12 border-l ${borderClassName}${wrapperClassName ? ` ${wrapperClassName}` : ""}`} onClick={(event) => event.stopPropagation()}>
+    <div className={`relative min-h-14 border-l ${borderClassName}${wrapperClassName ? ` ${wrapperClassName}` : ""}`} onClick={(event) => event.stopPropagation()}>
       <div className="absolute inset-0 grid grid-cols-7">
         {Array.from({ length: 7 }, (_, index) => <i key={index} className={`border-r ${borderClassName} last:border-r-0`} />)}
       </div>
       <button
         type="button"
         data-testid={testId}
-        className={`absolute top-2 flex h-8 flex-col justify-center gap-0.5 touch-none select-none overflow-hidden rounded px-2 text-left text-3xs font-semibold leading-3 text-white cursor-pointer ${toneClassName}${className ? ` ${className}` : ""}`}
+        className={`absolute top-2 flex h-10 flex-col justify-center gap-0.5 touch-none select-none overflow-hidden rounded px-2 text-left text-3xs font-semibold leading-3 text-white cursor-pointer ${toneClassName}${className ? ` ${className}` : ""}`}
         style={style}
         title={`${locked ? "Locked · " : ""}${start.toLocaleString()} - ${end.toLocaleString()}`}
         onClick={onClick}

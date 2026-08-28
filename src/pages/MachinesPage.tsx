@@ -72,7 +72,7 @@ export function MachinesPage() {
       </StatsRow>
 
       <div className={ui.filtersRow}>
-        <input className={ui.searchInput} placeholder="Search line, name or type..." value={machineSearch} onChange={(event) => { setMachineSearch(event.target.value); setMachinePage(1); }} />
+        <input className={ui.searchInput} placeholder="Search machine code, name or type..." value={machineSearch} onChange={(event) => { setMachineSearch(event.target.value); setMachinePage(1); }} />
         <Select
           value={machineTypeFilter}
           onChange={(value) => { setMachineTypeFilter(value); setMachinePage(1); }}
@@ -92,10 +92,10 @@ export function MachinesPage() {
         rows={machines}
         rowKey={(machine) => machine.id}
         columns={[
-          { key: "line", header: "Line", cell: (machine) => machine.lineCode },
+          { key: "line", header: "Machine code", cell: (machine) => machine.lineCode },
           { key: "name", header: "Name", cell: (machine) => machine.name },
           { key: "type", header: "Type", cell: (machine) => <span className={ui.badgeNeutral}>{machine.machineType}</span> },
-          { key: "cavity", header: "Cavity", cell: (machine) => machine.allocatedCavity },
+          { key: "cavity", header: "Allowed cavity", cell: (machine) => machine.allowedCavity },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
           { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (machine) => <><button className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button><button className={ui.btnLinkDanger} onClick={() => { const jobCount = jobsByMachine.get(machine.id) ?? 0; const warning = jobCount > 0 ? ` This also removes ${jobCount} scheduled job(s) on it.` : ""; if (window.confirm(`Delete machine ${machine.lineCode}?${warning}`)) void removeMachine(machine.id); }}>Delete</button></> },

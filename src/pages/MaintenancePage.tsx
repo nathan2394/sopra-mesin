@@ -42,7 +42,7 @@ const scheduleTypeButtonClass = "rounded px-3 py-1.5 text-xs font-semibold trans
 interface DrawerProps {
   open: boolean;
   editingMaintenance: MaintenanceWindow | null;
-  machineOptions: Array<{ id: string; lineCode: string; name: string }>;
+  machineOptions: Array<{ id: string; lineCode: string; name: string; machineType: string }>;
   visibleReasons: MaintenanceReason[];
   mwMachineIds: string[];
   mwScheduleType: ScheduleType;
@@ -119,9 +119,9 @@ function MaintenanceScheduleDrawer({
 
           <label className={ui.label}>Machine
             {editingMaintenance ? (
-              <Select value={mwMachineIds[0] ?? ""} onChange={(value) => onMachineChange([value])} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))} />
+              <Select value={mwMachineIds[0] ?? ""} onChange={(value) => onMachineChange([value])} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name} ${machine.machineType}` }))} />
             ) : (
-              <MultiSelect values={mwMachineIds} onChange={onMachineChange} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))} />
+              <MultiSelect values={mwMachineIds} onChange={onMachineChange} options={machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name} ${machine.machineType}` }))} />
             )}
           </label>
 
@@ -270,7 +270,10 @@ export function MaintenancePage() {
     recurring: maintenanceWindows.filter((window) => window.scheduleType === "Recurring").length,
   }), [machineOptions.length, maintenancePagination.totalItems, maintenanceWindows]);
 
-  const machineLabel = (id: string) => machineOptions.find((machine) => machine.id === id)?.lineCode ?? "—";
+  const machineLabel = (id: string) => {
+    const machine = machineOptions.find((row) => row.id === id);
+    return machine ? `${machine.name} · ${machine.machineType}` : "—";
+  };
 
   const resetForm = () => {
     setEditingMaintenance(null);
@@ -417,7 +420,7 @@ export function MaintenancePage() {
           value={maintenanceMachineFilter}
           onChange={(value) => { setMaintenanceMachineFilter(value); setMaintenancePage(1); }}
           buttonClassName={ui.filterSelectButton}
-          options={[{ value: "All", label: "All machines" }, ...machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name}` }))]}
+          options={[{ value: "All", label: "All machines" }, ...machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name} ${machine.machineType}` }))]}
         />
         <Select
           value={maintenanceTypeFilter}

@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { UIEvent } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, Search } from "lucide-react";
-import { JobStatus } from "../types";
+import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, Search, Wrench } from "lucide-react";
+import { JobStatus, MaintenanceType } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
@@ -21,17 +20,15 @@ interface Props {
   onJobMoved?: (jobId: string, machineId: string, newBlockStart: Date) => void;
 }
 
-const GRID_COLS = "112px minmax(180px,200px) minmax(180px,220px) 64px 150px minmax(340px,1fr)";
+const INFO_COLS = "minmax(0,7fr) minmax(0,13fr) minmax(0,6fr) minmax(0,19fr)";
+const GRID_COLS = `${INFO_COLS} minmax(0,55fr)`;
 
 export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, weekEnd, onWeekOffsetChange, isLoading, onSelectJob, onSelectMaintenance, onJobMoved }: Props) {
   const [machineId, setMachineId] = useState("All");
   const [search, setSearch] = useState("");
-  const headerInnerRef = useRef<HTMLDivElement>(null);
+  const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const stickySentinelRef = useRef<HTMLDivElement>(null);
   const [isStuck, setIsStuck] = useState(false);
-  const handleBodyScroll = (event: UIEvent<HTMLDivElement>) => {
-    if (headerInnerRef.current) headerInnerRef.current.style.transform = `translateX(-${event.currentTarget.scrollLeft}px)`;
-  };
   useEffect(() => {
     const node = stickySentinelRef.current;
     if (!node) return;
@@ -88,12 +85,11 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         </div>
 
         <div className="overflow-hidden bg-slate-50">
-          <div ref={headerInnerRef} className="grid text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS, width: "max-content", minWidth: "100%" }}>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order ID #</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Customer</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item #</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Ship</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2! pl-3!")}>Schedule</div>
+          <div className="grid w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order No.</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Delivery Due</div>
+            <div className={ui.cx(ui.th, "flex items-center px-2! pl-3!")}>Production Window</div>
             <div className="border-b border-l border-slate-200 bg-slate-50">
               <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
               <div className="grid grid-cols-7">{days.map((date) => <span key={date.toISOString()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{String(date.getDate()).padStart(2, "0")}</span>)}</div>
@@ -102,43 +98,61 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-b-xl" onScroll={handleBodyScroll}>
-        <div className="grid text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS, width: "max-content", minWidth: "100%" }}>
+      <div className="overflow-x-hidden rounded-b-xl">
+        <div className="grid w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
           {isLoading ? (
-            <div role="status" className="col-span-6 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
+            <div role="status" className="col-span-5 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
           ) : groups.length === 0 ? (
-            <div className="col-span-6 px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
+            <div className="col-span-5 px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
           ) : groups.map((groupMachineId) => {
             const groupJobs = visibleJobs.filter((job) => job.machineId === groupMachineId);
             const groupMaintenance = visibleMaintenance.filter((window) => window.machineId === groupMachineId);
-            const rows = [...groupJobs.map((job) => ({ type: "job" as const, start: job.startAt, job })), ...groupMaintenance.map((window) => ({ type: "maintenance" as const, start: window.startAt, window }))].sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
+            const entryCount = groupJobs.length + groupMaintenance.length;
+            const machine = machineById.get(groupMachineId);
+            const collapsed = collapsedMachines.has(groupMachineId);
+            const rows = [
+              ...groupJobs.map((job) => ({ type: "job" as const, sortAt: job.startAt, priority: 1, job })),
+              ...groupMaintenance.map((window) => {
+                const linkedJob = groupJobs.find((job) =>
+                  window.affectedScheduleId === job.id ||
+                  (window.type === MaintenanceType.Setup && Date.parse(window.endAt) === Date.parse(job.startAt))
+                );
+                return { type: "maintenance" as const, sortAt: linkedJob?.startAt ?? window.startAt, priority: linkedJob ? 0 : 1, window };
+              }),
+            ].sort((a, b) =>
+              Date.parse(a.sortAt) - Date.parse(b.sortAt) ||
+              a.priority - b.priority ||
+              (a.type === "maintenance" && b.type === "maintenance" ? Date.parse(a.window.startAt) - Date.parse(b.window.startAt) : 0)
+            );
             return (
               <div className="contents" key={groupMachineId}>
-                <div className="col-span-5 flex h-7 items-center border-b border-slate-200 bg-slate-50 px-2 text-2xs font-semibold text-slate-600">{machineById.get(groupMachineId)?.lineCode ?? "Unassigned"} · {groupJobs.length + groupMaintenance.length}</div>
-                <div className="h-7 border-b border-l border-slate-200 bg-slate-50" />
-                {rows.map((row) => row.type === "job" ? (
+                <button type="button" aria-expanded={!collapsed} onClick={() => setCollapsedMachines((current) => {
+                  const next = new Set(current);
+                  if (next.has(groupMachineId)) next.delete(groupMachineId); else next.add(groupMachineId);
+                  return next;
+                })} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
+                  <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
+                  <span>{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                  <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
+                </button>
+                {!collapsed && rows.map((row) => row.type === "job" ? (
                   <div className="contents group" key={`job-${row.job.id}`}>
-                    <div className="flex min-h-12 items-center truncate border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
-                    <div className="flex min-h-12 items-center whitespace-normal wrap-break-word border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.customerName || "—"}</div>
-                    <div className="flex min-h-12 items-center truncate border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.productName}</div>
-                    <div className="flex min-h-12 items-center whitespace-nowrap border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">{row.job.deliveryDate ? formatMonthDay(row.job.deliveryDate) : "—"}</div>
-                    <div className="flex min-h-12 flex-col justify-center gap-0.5 whitespace-nowrap border-b border-slate-200 px-2 py-2 pl-3 text-slate-700 group-hover:bg-slate-50">
-                      <span>{formatScheduleDateTime(row.job.startAt)}</span>
-                      <span>{formatScheduleDateTime(row.job.endAt)}</span>
+                    <div className="flex min-h-14 items-center truncate border-b border-slate-200 px-2 py-2 font-semibold text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
+                    <div className="flex min-h-14 min-w-0 flex-col justify-center border-b border-slate-200 px-2 py-2 text-slate-700 group-hover:bg-slate-50">
+                      <span className="truncate font-semibold" title={row.job.productName}>{row.job.productName}</span>
+                      {row.job.itemCode && <span className="truncate text-2xs text-slate-400" title={row.job.itemCode}>{row.job.itemCode}</span>}
                     </div>
+                    <div className="flex min-h-14 items-center whitespace-nowrap border-b border-slate-200 px-2 py-2 font-semibold text-slate-700 group-hover:bg-slate-50">{row.job.deliveryDate ? formatMonthDay(row.job.deliveryDate) : "—"}</div>
+                    <div className="flex min-h-14 min-w-0 items-center whitespace-nowrap border-b border-slate-200 px-2 py-2 pl-3 text-2xs font-semibold text-slate-700 group-hover:bg-slate-50">{formatScheduleDateTime(row.job.startAt)} → {formatScheduleDateTime(row.job.endAt)}</div>
                     <ScheduleBar job={row.job} weekStart={weekStart} onSelect={onSelectJob} onMove={onJobMoved} wrapperClassName="border-b border-b-slate-200 group-hover:bg-slate-50" />
                   </div>
                 ) : (
                   <div className="contents group" key={`maintenance-${row.window.id}`}>
-                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
-                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
-                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
-                    <div className="flex min-h-12 items-center border-b border-red-100 bg-red-50 px-2 py-2 text-slate-700 group-hover:bg-red-100">—</div>
-                    <div className="flex min-h-12 flex-col justify-center gap-0.5 whitespace-nowrap border-b border-red-100 bg-red-50 px-2 py-2 pl-3 text-slate-700 group-hover:bg-red-100">
-                      <span>{formatScheduleDateTime(row.window.startAt)}</span>
-                      <span>{formatScheduleDateTime(row.window.endAt)}</span>
+                    <div className="col-span-4 grid min-h-14 min-w-0 bg-red-50 text-left text-red-600 group-hover:bg-red-100" style={{ gridTemplateColumns: INFO_COLS }}>
+                      <span className="col-span-3 flex min-w-0 items-center gap-2 px-3 py-2"><Wrench size={14} className="shrink-0" /><span className="truncate font-semibold">{row.window.type}</span></span>
+                      <span className="flex min-w-0 items-center whitespace-nowrap px-2 py-2 pl-3 text-2xs font-medium">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
                     </div>
-                    <MaintenanceBar window={row.window} weekStart={weekStart} machine={machineById.get(row.window.machineId)} onSelect={onSelectMaintenance} wrapperClassName="border-b border-b-red-100 bg-red-50 group-hover:bg-red-100" />
+                    <MaintenanceBar window={row.window} weekStart={weekStart} machine={machineById.get(row.window.machineId)} onSelect={onSelectMaintenance} wrapperClassName="bg-red-50 group-hover:bg-red-100" />
                   </div>
                 ))}
               </div>

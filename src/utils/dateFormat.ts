@@ -27,7 +27,8 @@ const scheduleDateTime = new Intl.DateTimeFormat("en-US", {
 });
 
 export function formatDate(value: string | number | Date): string {
-  return dateOnly.format(new Date(value));
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "-" : dateOnly.format(date);
 }
 
 export function formatDateTime(value: string | number | Date): string {

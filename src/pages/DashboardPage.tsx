@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { PageHeader } from "../components/PageHeader";
 import { useOrders } from "../hooks/useOrders";
 import { useProduction } from "../hooks/useProduction";
-import { JobStatus, OrderStatus } from "../types";
+import { JobStatus } from "../types";
 import { formatDate } from "../utils/dateFormat";
 import { DataTable } from "../ui/DataTable";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -17,34 +17,31 @@ export function DashboardPage() {
     schedules: {},
   });
 
-  const openQty = useMemo(
-    () =>
-      orders
-        .filter((order) => order.status !== OrderStatus.Fulfilled && order.status !== OrderStatus.Cancelled)
-        .reduce((sum, order) => sum + computeOrderTotals(order.items).qty, 0),
-    [orders]
-  );
+  const completedItemIds = useMemo(() => new Set(scheduleJobs
+    .filter((job) => job.status === JobStatus.ProductionComplete && job.orderLineId)
+    .map((job) => String(job.orderLineId))), [scheduleJobs]);
+  const openOrders = useMemo(() => orders.filter((order) =>
+    order.items.some((item) => !completedItemIds.has(item.id))), [completedItemIds, orders]);
+  const openQty = useMemo(() => openOrders.reduce((sum, order) => sum + order.items
+    .filter((item) => !completedItemIds.has(item.id))
+    .reduce((itemSum, item) => itemSum + item.qty, 0), 0), [completedItemIds, openOrders]);
 
   const overdueOrders = useMemo(
     () =>
-      orders
-        .filter(
-          (order) =>
-            order.status !== OrderStatus.Fulfilled &&
-            order.status !== OrderStatus.Cancelled &&
-            new Date(order.deliveryDate).getTime() < Date.now()
-        )
+      openOrders
+        .filter((order) => order.deliveryDate)
+        .filter((order) => new Date(order.deliveryDate).getTime() < Date.now())
         .sort((a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime()),
-    [orders]
+    [openOrders]
   );
 
   const upcoming = useMemo(
     () =>
-      orders
-        .filter((order) => order.status !== OrderStatus.Fulfilled && order.status !== OrderStatus.Cancelled)
+      openOrders
+        .filter((order) => order.deliveryDate)
         .sort((a, b) => new Date(a.deliveryDate).getTime() - new Date(b.deliveryDate).getTime())
         .slice(0, 6),
-    [orders]
+    [openOrders]
   );
 
   const activeMachines = machines.filter((machine) => machine.isActive).length;
@@ -59,7 +56,7 @@ export function DashboardPage() {
       />
 
       <StatsRow>
-        <StatCard value={orders.length} label="Open orders" />
+        <StatCard value={openOrders.length} label="Open orders" />
         <StatCard value={openQty.toLocaleString()} label="Open qty (pcs)" />
         <StatCard value={`${activeMachines}/${machines.length}`} label="Active machines" />
         <StatCard value={jobsInProgress} label="Jobs in progress" />

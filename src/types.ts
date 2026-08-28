@@ -2,34 +2,21 @@ export const OrderSourceType = {
   SoPaid: "SO_Paid",
   ScUnpaid: "SC_Unpaid",
   PiUnpaid: "PI_Unpaid",
+  ManualRequest: "MR_Unpaid",
+  ManualForecast: "MF_Unpaid",
 } as const;
 export type OrderSourceType = (typeof OrderSourceType)[keyof typeof OrderSourceType];
 
-export const OrderStatus = {
-  Open: "Open",
-  Confirmed: "Confirmed",
-  Final: "Final",
-  InProduction: "In Production",
-  Fulfilled: "Fulfilled",
-  Cancelled: "Cancelled",
-} as const;
-export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
-
 export interface OrderLineItem {
   id: string;
+  itemCode?: string;
   description: string;
   qty: number;
-  fob: number;
-  mp?: number;
-  carton?: number;
-  cbm?: number;
 }
 
 export interface Order {
   id: string;
   sourceType: OrderSourceType;
-  scheduleId?: string;
-  scheduleMachineId?: string;
   orderNo: string;
 
   poDate: string;
@@ -37,11 +24,8 @@ export interface Order {
   customerPoNo: string;
   poShipStart: string;
   poShipEnd: string;
-  prodScheduleStart?: string;
-  prodScheduleEnd?: string;
   deliveryDate: string;
   orderDate?: string;
-  status: OrderStatus;
   items: OrderLineItem[];
   createdAt: string;
   updatedAt: string;
@@ -54,7 +38,7 @@ export interface Machine {
   lineCode: string;
   name: string;
   machineType: string;
-  allocatedCavity: number;
+  allowedCavity: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -98,6 +82,8 @@ export interface ScheduleJob {
   machineId: string;
   isLocked: boolean;
   productName: string;
+  preform?: string;
+  cavity?: number;
   qty: number;
   startAt: string;
   endAt: string;

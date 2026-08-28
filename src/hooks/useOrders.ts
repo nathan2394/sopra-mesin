@@ -2,17 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PagedResult } from "../api/client";
 import { notify } from "../components/Notification";
-import { OrderSourceType, OrderStatus } from "../types";
+import { OrderSourceType } from "../types";
 import type { Order, OrderDraft } from "../types";
 
 interface ApiOrderLine {
   id: number;
+  itemCode?: string;
   itemName: string;
   quantity: number;
-  fob?: number;
-  mp?: number;
-  carton?: number;
-  cbm?: number;
 }
 
 interface ApiOrder {
@@ -24,42 +21,25 @@ interface ApiOrder {
   purchaseOrderNumber?: string;
   customerName?: string;
   orderDate?: string;
-  productionStartsAt?: string;
-  productionEndsAt?: string;
   shipStartDate?: string;
   shipEndDate?: string;
   deliveryDate?: string;
-  status: OrderStatus;
   lines: ApiOrderLine[];
-}
-
-interface ApiSchedule {
-  id: number;
-  machineId: number;
-  itemName: string;
-  preformName?: string;
-  cavity?: number;
-  quantity: number;
-  setupPercent: number;
-  progressPercent: number;
-  setupMinutes: number;
-  startsAt: string;
-  endsAt: string;
-  deliveryDate?: string;
-  reason?: string;
-  status: string;
-  orders: Array<{ orderLineId: number }>;
 }
 
 const sourceFromApi: Record<string, OrderSourceType> = {
   "SO:Paid": OrderSourceType.SoPaid,
   "SC:Unpaid": OrderSourceType.ScUnpaid,
   "PI:Unpaid": OrderSourceType.PiUnpaid,
+  "MR:Unpaid": OrderSourceType.ManualRequest,
+  "MF:Unpaid": OrderSourceType.ManualForecast,
 };
 const sourceToApi: Record<OrderSourceType, { source: string; paymentStatus: "Paid" | "Unpaid" }> = {
   [OrderSourceType.SoPaid]: { source: "SO", paymentStatus: "Paid" },
   [OrderSourceType.ScUnpaid]: { source: "SC", paymentStatus: "Unpaid" },
   [OrderSourceType.PiUnpaid]: { source: "PI", paymentStatus: "Unpaid" },
+  [OrderSourceType.ManualRequest]: { source: "MR", paymentStatus: "Unpaid" },
+  [OrderSourceType.ManualForecast]: { source: "MF", paymentStatus: "Unpaid" },
 };
 
 const fromApi = (order: ApiOrder): Order => {
@@ -68,24 +48,18 @@ const fromApi = (order: ApiOrder): Order => {
     id: String(order.id),
     sourceType: sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid,
     orderNo: order.orderNumber,
-    poDate: timestamp,
+    poDate: order.orderDate ?? "",
     customerName: order.customerName ?? "",
     customerPoNo: order.purchaseOrderNumber ?? "",
-    poShipStart: order.shipStartDate ?? timestamp,
-    poShipEnd: order.shipEndDate ?? timestamp,
-    prodScheduleStart: order.productionStartsAt,
-    prodScheduleEnd: order.productionEndsAt,
-    deliveryDate: order.deliveryDate ?? timestamp,
+    poShipStart: order.shipStartDate ?? "",
+    poShipEnd: order.shipEndDate ?? "",
+    deliveryDate: order.deliveryDate ?? "",
     orderDate: order.orderDate,
-    status: order.status,
     items: order.lines.map((line) => ({
       id: String(line.id),
+      itemCode: line.itemCode,
       description: line.itemName,
       qty: line.quantity,
-      fob: line.fob ?? 0,
-      mp: line.mp,
-      carton: line.carton,
-      cbm: line.cbm,
     })),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -98,22 +72,15 @@ const toApi = (order: OrderDraft) => ({
   orderNumber: order.orderNo || undefined,
   purchaseOrderNumber: order.customerPoNo,
   customerName: order.customerName,
-  orderDate: order.poDate,
-  productionStartsAt: order.prodScheduleStart,
-  productionEndsAt: order.prodScheduleEnd,
-  shipStartDate: order.poShipStart.slice(0, 10),
-  shipEndDate: order.poShipEnd.slice(0, 10),
-  deliveryDate: order.deliveryDate.slice(0, 10),
-  status: order.status === OrderStatus.Fulfilled ? OrderStatus.Final : order.status,
+  orderDate: order.poDate || null,
+  shipStartDate: order.poShipStart ? order.poShipStart.slice(0, 10) : null,
+  shipEndDate: order.poShipEnd ? order.poShipEnd.slice(0, 10) : null,
+  deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
   lines: order.items.map((line) => ({
     id: /^\d+$/.test(line.id) ? Number(line.id) : undefined,
+    itemCode: line.itemCode,
     itemName: line.description,
     quantity: line.qty,
-    fob: line.fob,
-    mp: line.mp,
-    carton: line.carton,
-    cbm: line.cbm,
-    status: order.status === OrderStatus.Fulfilled ? OrderStatus.Final : order.status,
   })),
 });
 
@@ -125,7 +92,6 @@ interface OrderQuery {
   pageSize?: number;
   search?: string;
   source?: OrderSourceType | "";
-  status?: string;
   sortBy?: string;
   sortDir?: "asc" | "desc";
 }
@@ -135,7 +101,6 @@ export async function getOrderPage({
   pageSize = 100,
   search = "",
   source = "",
-  status = "",
   sortBy = "",
   sortDir = "asc",
 }: OrderQuery = {}): Promise<PagedResult<Order>> {
@@ -145,7 +110,6 @@ export async function getOrderPage({
     query.set("source", sourceToApi[source].source);
     query.set("paymentStatus", sourceToApi[source].paymentStatus);
   }
-  if (status) query.set("status", status);
   if (sortBy) {
     query.set("sortBy", sortBy);
     query.set("sortDir", sortDir);
@@ -160,7 +124,6 @@ export function useOrders(
   pageSize = 100,
   search = "",
   source: OrderSourceType | "" = "",
-  status = "",
   sortBy = "",
   sortDir: "asc" | "desc" = "asc",
 ) {
@@ -171,7 +134,7 @@ export function useOrders(
   const refresh = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await getOrderPage({ page, pageSize, search, source, status, sortBy, sortDir });
+      const result = await getOrderPage({ page, pageSize, search, source, sortBy, sortDir });
       setPagination({
         page: result.page,
         pageSize: result.pageSize,
@@ -184,55 +147,41 @@ export function useOrders(
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, search, source, status, sortBy, sortDir]);
+  }, [page, pageSize, search, source, sortBy, sortDir]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
+  const addOrder = useCallback(async (draft: OrderDraft) => {
+    try {
+      await api<ApiOrder>("/orders", { method: "POST", body: JSON.stringify(toApi(draft)) });
+      await refresh();
+      notify("success", "Order created successfully.");
+      return true;
+    } catch (cause) { report(cause); return false; }
+  }, [refresh]);
+
   const updateOrder = useCallback(async (id: string, draft: OrderDraft) => {
     try {
-      const order = await api<ApiOrder>(`/orders/${id}`, {
+      await api<ApiOrder>(`/orders/${id}`, {
         method: "PUT",
         body: JSON.stringify(toApi(draft)),
       });
-      await syncSchedule(order, draft);
       await refresh();
       notify("success", "Order updated successfully.");
-    } catch (cause) { report(cause); }
+      return true;
+    } catch (cause) { report(cause); return false; }
   }, [refresh]);
 
-  return { orders, pagination, isLoading, updateOrder, refresh };
-}
+  const removeOrder = useCallback(async (id: string) => {
+    try {
+      await api<void>(`/orders/${id}`, { method: "DELETE" });
+      await refresh();
+      notify("success", "Order deleted successfully.");
+      return true;
+    } catch (cause) { report(cause); return false; }
+  }, [refresh]);
 
-async function syncSchedule(order: ApiOrder, draft: OrderDraft) {
-  if (!draft.scheduleMachineId || !draft.prodScheduleStart || !draft.prodScheduleEnd) {
-    if (draft.scheduleId) await api<void>(`/schedules/${draft.scheduleId}`, { method: "DELETE" });
-    return;
-  }
-
-  const current = draft.scheduleId
-    ? await api<ApiSchedule>(`/schedules/${draft.scheduleId}`)
-    : undefined;
-  await api(draft.scheduleId ? `/schedules/${draft.scheduleId}` : "/schedules", {
-    method: draft.scheduleId ? "PUT" : "POST",
-    body: JSON.stringify({
-      machineId: Number(draft.scheduleMachineId),
-      itemName: order.lines.length === 1
-        ? order.lines[0].itemName
-        : `${order.orderNumber} (${order.lines.length} items)`,
-      quantity: order.lines.reduce((total, line) => total + line.quantity, 0),
-      preformName: current?.preformName,
-      cavity: current?.cavity,
-      setupPercent: current?.setupPercent ?? 0,
-      progressPercent: current?.progressPercent ?? 0,
-      setupMinutes: current?.setupMinutes ?? 0,
-      startsAt: draft.prodScheduleStart,
-      endsAt: draft.prodScheduleEnd,
-      deliveryDate: draft.deliveryDate.slice(0, 10),
-      reason: current?.reason,
-      status: current?.status ?? "Open",
-      orderLineIds: order.lines.map((line) => line.id),
-    }),
-  });
+  return { orders, pagination, isLoading, addOrder, updateOrder, removeOrder, refresh };
 }
