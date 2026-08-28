@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Drawer } from "./Drawer";
-import { JobStatus } from "../types";
+import { JobStatus, MaintenanceType } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { CreatableSelect } from "../ui/CreatableSelect";
 import { Select } from "../ui/Select";
@@ -12,6 +12,8 @@ interface Props {
   job?: ScheduleJob;
   maintenance?: MaintenanceWindow;
   setupMaintenance?: MaintenanceWindow;
+  linkedCorrectiveMaintenance?: MaintenanceWindow;
+  linkedJob?: ScheduleJob;
   machine?: Machine;
   orderRef?: string;
   onSave?: (value: { isLocked: boolean; startAt?: string; endAt?: string; correctiveMaintenance?: { reason: string; estimatedHours: number } }) => Promise<boolean> | boolean;
@@ -62,7 +64,7 @@ function ArrowIcon() {
   );
 }
 
-export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machine, orderRef, onSave, onClose }: Props) {
+export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linkedCorrectiveMaintenance, linkedJob, machine, orderRef, onSave, onClose }: Props) {
   const [locked, setLocked] = useState(job?.isLocked ?? false);
   const [correctiveMaintenance, setCorrectiveMaintenance] = useState(false);
   const [reason, setReason] = useState("Burned Bearing");
@@ -73,7 +75,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machi
   const [endDate, setEndDate] = useState(job ? inputDate(job.endAt) : "");
   const [endTime, setEndTime] = useState(job ? inputTime(job.endAt) : "");
   const isComplete = job?.status === JobStatus.ProductionComplete;
-  const hasActiveCorrective = job?.status === JobStatus.ProductionPending;
+  const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
   const canEditSchedule = canEdit && !locked && !!job;
   const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
@@ -96,10 +98,11 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machi
 
   return (
     <Drawer
-      title={`${machine?.lineCode ?? "Unassigned"} - ${job?.id ?? maintenance?.id}`}
+      title={isMaintenance ? maintenance?.type ?? "Maintenance" : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
+      subtitle={machine ? `${machine.name} · ${machine.machineType}` : undefined}
       onClose={onClose}
       ariaLabel="Schedule detail"
-      headerExtra={<span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold text-white ${statusClass}`}>{status}</span>}
+      headerExtra={!isMaintenance && <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold text-white ${statusClass}`}>{status}</span>}
     >
           {!isMaintenance && (
             <>
@@ -110,13 +113,27 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machi
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-x-8 gap-y-5">
+              <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
                 <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
                 <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
+                <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-base font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
                 <div><p className="text-13 text-slate-400">Delivery Due</p><p className="mt-1 text-base font-semibold text-slate-950">{job ? formatDate(job.deliveryDate) : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-base font-semibold text-slate-950">{orderRef || job?.itemCode || "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order Ref</p><p className="mt-1 text-base font-semibold text-slate-950">{orderRef || "-"}</p></div>
               </div>
             </>
+          )}
+
+          {isMaintenance && (
+            <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
+              <div><p className="text-13 text-slate-400">Machine</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine ? `${machine.name} · ${machine.machineType}` : "-"}</p></div>
+              <div><p className="text-13 text-slate-400">Machine code</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine?.lineCode ?? "-"}</p></div>
+              <div><p className="text-13 text-slate-400">Schedule</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType ?? "-"}</p></div>
+              <div><p className="text-13 text-slate-400">Frequency</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType === "Recurring" ? [maintenance.repeatType, maintenance.repeatValue].filter(Boolean).join(" · ") : "One Time"}</p></div>
+              <div className="col-span-2"><p className="text-13 text-slate-400">Reason</p><p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p></div>
+            </div>
           )}
 
           <div className="grid grid-cols-[1fr_40px_1fr] items-end gap-2 border-b border-slate-200 pb-5">
@@ -147,10 +164,10 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machi
           {!isMaintenance && invalidSchedule && <p className="-mt-2 border-b border-slate-200 pb-5 text-xs text-red-600">End production harus lebih besar dari start production.</p>}
 
           {!isMaintenance && (
-            <div className="rounded-lg border border-brand-200 bg-brand-50/50 p-3">
+            <div className="rounded-lg bg-slate-50 p-4">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-sm font-semibold text-slate-900">Setup Maintenance</span>
-                {setupMaintenance && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
+                {setupMaintenance && <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
               </div>
               {setupMaintenance ? (
                 <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
@@ -163,20 +180,51 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, machi
           )}
 
           {isMaintenance ? (
-            <div className="rounded-xl border border-slate-200 p-3">
-              <p className="text-13 text-slate-500">{maintenance?.type ?? "Maintenance"}</p>
-              <label className="mt-4 block text-13 font-semibold text-slate-700">Reason</label>
-              <div className="mt-2 rounded-md border border-slate-200 bg-white px-3 py-2.5 text-13 text-slate-500 shadow-sm">{maintenance?.reason || maintenance?.type || "-"}</div>
-            </div>
+            <>
+              {(maintenance?.type === MaintenanceType.Setup || maintenance?.type === MaintenanceType.Corrective) && (
+                <div className="rounded-lg bg-slate-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-900">{linkedJob ? `Order ${linkedJob.sourceOrderRefs ?? linkedJob.id}` : "Linked Order"}</span>
+                    {linkedJob && <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this maintenance</span>}
+                  </div>
+                  {linkedJob ? (
+                    <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
+                      <div><p className="text-2xs text-slate-400">Start Production</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedJob.startAt)}</p></div>
+                      <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
+                      <div><p className="text-2xs text-slate-400">End Production</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedJob.endAt)}</p></div>
+                    </div>
+                  ) : <p className="mt-2 text-xs text-slate-500">No order linked to this maintenance.</p>}
+                </div>
+              )}
+            </>
           ) : (
-            <div className="rounded-lg border border-slate-200 p-3">
-              <div className="flex items-center gap-3">
-                <button type="button" role="switch" aria-checked={hasActiveCorrective || correctiveMaintenance} disabled={isComplete || hasActiveCorrective} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${hasActiveCorrective || correctiveMaintenance ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><MaintenanceIcon /></span>
-                </button>
-                <span className="text-sm font-medium text-slate-900">Corrective Maintenance</span>
-              </div>
-              {hasActiveCorrective && <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900"><p className="font-semibold">Corrective maintenance #{job?.blockingMaintenanceId ?? "active"}</p><p className="mt-1">{job?.blockingMaintenanceReason ?? "Maintenance sedang berlangsung"}</p></div>}
+            <div className="rounded-lg bg-slate-50 p-4">
+              {hasActiveCorrective ? (
+                <>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-semibold text-slate-900">Corrective Maintenance</span>
+                    <span className="rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>
+                  </div>
+                  <div className="mt-3">
+                    <p className="text-2xs text-slate-400">Reason</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-800">{linkedCorrectiveMaintenance?.reason ?? job?.blockingMaintenanceReason ?? "Maintenance in progress"}</p>
+                  </div>
+                  {linkedCorrectiveMaintenance && (
+                    <div className="mt-3 grid grid-cols-[1fr_24px_1fr] items-center gap-2">
+                      <div><p className="text-2xs text-slate-400">Start Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedCorrectiveMaintenance.startAt)}</p></div>
+                      <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
+                      <div><p className="text-2xs text-slate-400">End Corrective</p><p className="mt-1 text-xs font-semibold text-slate-800">{displayDateTime(linkedCorrectiveMaintenance.endAt)}</p></div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button type="button" role="switch" aria-checked={correctiveMaintenance} disabled={isComplete} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${correctiveMaintenance ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><MaintenanceIcon /></span>
+                  </button>
+                  <span className="text-sm font-semibold text-slate-900">Corrective Maintenance</span>
+                </div>
+              )}
               {correctiveMaintenance && !hasActiveCorrective && (
                 <div className="mt-4 space-y-3">
                   <label className="block text-13 font-semibold text-slate-800">Reason <span className="text-red-500">*</span>

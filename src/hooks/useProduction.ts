@@ -17,13 +17,11 @@ import type { OptimizedSchedule } from "../utils/optimization";
 type ApiMachine = Omit<Machine, "id"> & { id: number };
 type ApiWindow = Omit<MaintenanceWindow, "id" | "machineId" | "affectedScheduleId"> & { id: number; machineId: number; affectedScheduleId?: number };
 type StoredJob = ScheduleJob & {
-  preformName?: string;
-  cavity?: number;
   setupPercent: number;
   progressPercent: number;
   reason?: string;
   purchaseOrderNumber?: string;
-  orderLineIds: number[];
+  orderLineId?: number;
 };
 
 interface ApiJob {
@@ -33,7 +31,7 @@ interface ApiJob {
   isLocked: boolean;
   isMaintenance: boolean;
   itemName: string;
-  preformName?: string;
+  preform?: string;
   cavity?: number;
   quantity: number;
   setupPercent: number;
@@ -45,8 +43,9 @@ interface ApiJob {
   reason?: string;
   blockingMaintenanceId?: number;
   blockingMaintenanceReason?: string;
+  rescheduledScheduleIds?: number[];
   status: ScheduleJob["status"];
-  orders: Array<{ orderLineId: number; orderNumber: string; purchaseOrderNumber?: string; customerName?: string; itemCode?: string }>;
+  order?: { orderLineId: number; orderNumber: string; purchaseOrderNumber?: string; customerName?: string; itemCode?: string };
 }
 
 interface ProductionOptions {
@@ -68,31 +67,31 @@ const jobFromApi = (job: ApiJob): StoredJob => ({
   machineId: String(job.machineId),
   isLocked: job.isLocked,
   productName: job.itemName,
+  preform: job.preform,
+  cavity: job.cavity,
   qty: job.quantity,
   startAt: job.startsAt,
   endAt: job.endsAt,
   setupMinutes: job.setupMinutes,
   deliveryDate: job.deliveryDate ?? job.endsAt,
-  sourceOrderRefs: [...new Set(job.orders.map((order) => order.orderNumber))].join(", ") || undefined,
+  sourceOrderRefs: job.order?.orderNumber,
   status: job.status,
-  customerName: job.orders[0]?.customerName,
-  itemCode: job.orders[0]?.itemCode,
-  preformName: job.preformName,
-  cavity: job.cavity,
+  customerName: job.order?.customerName,
+  itemCode: job.order?.itemCode,
   setupPercent: job.setupPercent,
   progressPercent: job.progressPercent,
   reason: job.reason,
-  purchaseOrderNumber: job.orders[0]?.purchaseOrderNumber,
+  purchaseOrderNumber: job.order?.purchaseOrderNumber,
   blockingMaintenanceId: job.blockingMaintenanceId ? String(job.blockingMaintenanceId) : undefined,
   blockingMaintenanceReason: job.blockingMaintenanceReason,
-  orderLineIds: job.orders.map((order) => order.orderLineId),
+  orderLineId: job.order?.orderLineId,
 });
 
 const jobBody = (job: StoredJob) => ({
   machineId: Number(job.machineId),
   isLocked: job.isLocked,
   itemName: job.productName,
-  preformName: job.preformName,
+  preform: job.preform,
   cavity: job.cavity,
   quantity: job.qty,
   setupPercent: job.setupPercent,
@@ -103,7 +102,7 @@ const jobBody = (job: StoredJob) => ({
   deliveryDate: job.deliveryDate.slice(0, 10),
   reason: job.reason,
   status: job.status,
-  orderLineIds: job.orderLineIds,
+  orderLineId: job.orderLineId,
 });
 
 const report = (cause: unknown) =>
@@ -219,6 +218,15 @@ export function useProduction(options: ProductionOptions = {}) {
       if (!silent) setSchedulesLoading(false);
     }
   }, [loadSchedules, scheduleEndAt, scheduleStartAt]);
+
+  const getScheduleJob = useCallback(async (id: string) => {
+    try {
+      return jobFromApi(await api<ApiJob>(`/schedules/${id}`));
+    } catch (cause) {
+      report(cause);
+      return null;
+    }
+  }, []);
 
   useEffect(() => { void refreshMachines(); }, [refreshMachines]);
   useEffect(() => { void refreshMachineOptions(); }, [refreshMachineOptions]);
@@ -345,18 +353,18 @@ export function useProduction(options: ProductionOptions = {}) {
     } catch (cause) { report(cause); return false; }
   }, [scheduleJobs]);
 
-  const moveJob = useCallback(async (id: string, _machineId: string, start: Date) => {
+  const moveJob = useCallback(async (id: string, _machineId: string, start: Date, cascadeScheduleIds?: string[]) => {
     const current = scheduleJobs.find((job) => job.id === id);
     if (!current) return false;
     try {
-      await api<ApiJob>(`/schedules/${id}/reschedule`, {
+      const updated = await api<ApiJob>(`/schedules/${id}/reschedule`, {
         method: "PATCH",
-        body: JSON.stringify({ startsAt: localDateTime(start) }),
+        body: JSON.stringify({ startsAt: localDateTime(start), cascadeScheduleIds: cascadeScheduleIds?.map(Number) }),
       });
-      await refreshSchedules();
-      return true;
+      await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
+      return updated.rescheduledScheduleIds?.map(String) ?? [];
     } catch (cause) { report(cause); return false; }
-  }, [refreshSchedules, scheduleJobs]);
+  }, [refreshMaintenance, refreshSchedules, scheduleJobs]);
 
   const loadOptimizationContext = useCallback(async () => {
     const [jobs, maintenance] = await Promise.all([
@@ -377,8 +385,8 @@ export function useProduction(options: ProductionOptions = {}) {
       ]);
       const itemsById = new Map(orders.flatMap((order) => order.items.map((item) => [Number(item.id), { order, item }] as const)));
       const protectedJobsByItemId = new Map(allJobs
-        .filter((job) => job.isLocked || job.status !== "Open")
-        .flatMap((job) => job.orders.map((order) => [order.orderLineId, job] as const)));
+        .filter((job) => job.order && (job.isLocked || job.status !== "Open"))
+        .map((job) => [job.order!.orderLineId, job] as const));
       const protectedScheduleIds = new Set([...protectedJobsByItemId.values()].map((job) => job.id));
       const optimizedItemIdSet = new Set(optimizedItemIds);
       const returnedItemIds = new Set(optimized.orderSchedules.map((row) => row.itemId));
@@ -388,7 +396,7 @@ export function useProduction(options: ProductionOptions = {}) {
         const entry = itemsById.get(result.itemId);
         if (!entry) throw new Error(`Order item ${result.itemId} was not found.`);
         const { order, item } = entry;
-        const matched = allJobs.find((job) => job.orders.some((jobOrder) => jobOrder.orderLineId === result.itemId));
+        const matched = allJobs.find((job) => job.order?.orderLineId === result.itemId);
         if (matched && (matched.isLocked || matched.status !== "Open")) {
           const unchanged = matched.machineId === result.machineId &&
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
@@ -406,18 +414,18 @@ export function useProduction(options: ProductionOptions = {}) {
           machineId: result.machineId,
           isLocked: current?.isLocked ?? false,
           itemName: item.description,
-          preformName: current?.preformName,
-          cavity: current?.cavity,
+          preform: result.preform,
+          cavity: result.cavity,
           quantity: item.qty,
           setupPercent: current?.setupPercent ?? 0,
           progressPercent: current?.progressPercent ?? 0,
           setupMinutes: current?.setupMinutes ?? 0,
           startsAt: result.startAt,
           endsAt: result.endAt,
-          deliveryDate: order.deliveryDate.slice(0, 10),
+          deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
           reason: current?.reason,
           status: current?.status ?? "Open",
-          orderLineIds: [result.itemId],
+          orderLineId: result.itemId,
         };
         return [{ id: scheduleId, ...body }];
       });
@@ -425,11 +433,11 @@ export function useProduction(options: ProductionOptions = {}) {
       const replaceableScheduleIds = new Set(allJobs.filter((job) =>
         !job.isMaintenance &&
         !protectedScheduleIds.has(job.id) &&
-        job.orders.some((order) => optimizedItemIdSet.has(order.orderLineId))
+        job.order && optimizedItemIdSet.has(job.order.orderLineId)
       ).map((job) => job.id));
       const deleteScheduleIds = allJobs.filter((job) =>
         replaceableScheduleIds.has(job.id) &&
-        !job.orders.some((order) => returnedItemIds.has(order.orderLineId))
+        job.order && !returnedItemIds.has(job.order.orderLineId)
       ).map((job) => job.id);
       const replacedSetup = existingMaintenance.filter((row) =>
         row.type === "Setup Maintenance" &&
@@ -490,6 +498,7 @@ export function useProduction(options: ProductionOptions = {}) {
     addCorrectiveMaintenance,
     updateJob,
     moveJob,
+    getScheduleJob,
     loadOptimizationContext,
     applyOptimizationResponse,
     refreshMaintenance,
