@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, Search, Wrench } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
 import { JobStatus, MaintenanceType } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
@@ -28,6 +28,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
   const [search, setSearch] = useState("");
   const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const stickySentinelRef = useRef<HTMLDivElement>(null);
+  const headerScrollRef = useRef<HTMLDivElement>(null);
   const [isStuck, setIsStuck] = useState(false);
   useEffect(() => {
     const node = stickySentinelRef.current;
@@ -55,6 +56,29 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
   );
   const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId)])]
     .sort((a, b) => (machineById.get(a)?.lineCode ?? "").localeCompare(machineById.get(b)?.lineCode ?? ""));
+  const toggleMachine = (groupMachineId: string) => setCollapsedMachines((current) => {
+    const next = new Set(current);
+    if (next.has(groupMachineId)) next.delete(groupMachineId); else next.add(groupMachineId);
+    return next;
+  });
+  const rowsForMachine = (groupMachineId: string) => {
+    const groupJobs = visibleJobs.filter((job) => job.machineId === groupMachineId);
+    const groupMaintenance = visibleMaintenance.filter((window) => window.machineId === groupMachineId);
+    return [
+      ...groupJobs.map((job) => ({ type: "job" as const, sortAt: job.startAt, priority: 1, job })),
+      ...groupMaintenance.map((window) => {
+        const linkedJob = groupJobs.find((job) =>
+          window.affectedScheduleId === job.id ||
+          (window.type === MaintenanceType.Setup && Date.parse(window.endAt) === Date.parse(job.startAt))
+        );
+        return { type: "maintenance" as const, sortAt: linkedJob?.startAt ?? window.startAt, priority: linkedJob ? 0 : 1, window };
+      }),
+    ].sort((a, b) =>
+      Date.parse(a.sortAt) - Date.parse(b.sortAt) ||
+      a.priority - b.priority ||
+      (a.type === "maintenance" && b.type === "maintenance" ? Date.parse(a.window.startAt) - Date.parse(b.window.startAt) : 0)
+    );
+  };
 
   return (
     <section className="overflow-visible rounded-xl border border-slate-200 bg-white">
@@ -84,8 +108,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             .map(([tone, label]) => <span key={label} className="flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-full ${tone}`} />{label}</span>)}
         </div>
 
-        <div className="overflow-hidden bg-slate-50">
-          <div className="grid w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
+        <div ref={headerScrollRef} data-testid="schedule-grid-header" className="hidden overflow-hidden bg-slate-50 xl:block">
+          <div className="grid min-w-[1000px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order No.</div>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item</div>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Delivery Due</div>
@@ -98,39 +122,22 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         </div>
       </div>
 
-      <div className="overflow-x-hidden rounded-b-xl">
-        <div className="grid w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
+      <div data-testid="schedule-grid-body" className="hidden overflow-x-auto rounded-b-xl xl:block" onScroll={(event) => {
+        if (headerScrollRef.current) headerScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
+      }}>
+        <div className="grid min-w-[1000px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
           {isLoading ? (
             <div role="status" className="col-span-5 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
           ) : groups.length === 0 ? (
             <div className="col-span-5 px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
           ) : groups.map((groupMachineId) => {
-            const groupJobs = visibleJobs.filter((job) => job.machineId === groupMachineId);
-            const groupMaintenance = visibleMaintenance.filter((window) => window.machineId === groupMachineId);
-            const entryCount = groupJobs.length + groupMaintenance.length;
+            const rows = rowsForMachine(groupMachineId);
+            const entryCount = rows.length;
             const machine = machineById.get(groupMachineId);
             const collapsed = collapsedMachines.has(groupMachineId);
-            const rows = [
-              ...groupJobs.map((job) => ({ type: "job" as const, sortAt: job.startAt, priority: 1, job })),
-              ...groupMaintenance.map((window) => {
-                const linkedJob = groupJobs.find((job) =>
-                  window.affectedScheduleId === job.id ||
-                  (window.type === MaintenanceType.Setup && Date.parse(window.endAt) === Date.parse(job.startAt))
-                );
-                return { type: "maintenance" as const, sortAt: linkedJob?.startAt ?? window.startAt, priority: linkedJob ? 0 : 1, window };
-              }),
-            ].sort((a, b) =>
-              Date.parse(a.sortAt) - Date.parse(b.sortAt) ||
-              a.priority - b.priority ||
-              (a.type === "maintenance" && b.type === "maintenance" ? Date.parse(a.window.startAt) - Date.parse(b.window.startAt) : 0)
-            );
             return (
               <div className="contents" key={groupMachineId}>
-                <button type="button" aria-expanded={!collapsed} onClick={() => setCollapsedMachines((current) => {
-                  const next = new Set(current);
-                  if (next.has(groupMachineId)) next.delete(groupMachineId); else next.add(groupMachineId);
-                  return next;
-                })} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
+                <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
                   <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
                   <span>{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
                   <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
@@ -159,6 +166,52 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             );
           })}
         </div>
+      </div>
+
+      <div className="xl:hidden">
+        {isLoading ? (
+          <div role="status" className="flex items-center justify-center gap-2 px-4 py-8 text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
+        ) : groups.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-slate-500">No jobs or maintenance in this week.</div>
+        ) : groups.map((groupMachineId) => {
+          const rows = rowsForMachine(groupMachineId);
+          const machine = machineById.get(groupMachineId);
+          const collapsed = collapsedMachines.has(groupMachineId);
+          return (
+            <div key={`agenda-${groupMachineId}`}>
+              <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="flex h-10 w-full items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                <ChevronRight size={14} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
+                <span className="min-w-0 flex-1 truncate">{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-2xs font-medium text-slate-500">{rows.length}</span>
+              </button>
+              {!collapsed && <div className="divide-y divide-slate-200">
+                {rows.map((row) => row.type === "job" ? (
+                  <button type="button" key={`agenda-job-${row.job.id}`} onClick={() => onSelectJob?.(row.job)} className="flex w-full items-start gap-3 bg-white px-3 py-3 text-left hover:bg-slate-50">
+                    <span className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${ui.scheduleToneClass(row.job.status, false)}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
+                        {row.job.isLocked && <LockKeyhole size={11} className="shrink-0 text-slate-500" />}
+                        <span className="truncate">{row.job.sourceOrderRefs || "No order"}</span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-slate-600">{row.job.productName}</span>
+                      <span className="mt-1 block text-2xs tabular-nums text-slate-500">{formatScheduleDateTime(row.job.startAt)} → {formatScheduleDateTime(row.job.endAt)}</span>
+                    </span>
+                    <span className="shrink-0 text-right text-2xs font-semibold text-slate-500">Due<br />{row.job.deliveryDate ? formatMonthDay(row.job.deliveryDate) : "—"}</span>
+                  </button>
+                ) : (
+                  <button type="button" key={`agenda-maintenance-${row.window.id}`} onClick={() => onSelectMaintenance?.(row.window)} className="flex w-full items-start gap-3 bg-red-50 px-3 py-3 text-left text-red-700 hover:bg-red-100">
+                    <Wrench size={14} className="mt-0.5 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-semibold">{row.window.type}</span>
+                      {row.window.reason && <span className="mt-0.5 block truncate text-xs text-red-600">{row.window.reason}</span>}
+                      <span className="mt-1 block text-2xs tabular-nums text-red-600">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>}
+            </div>
+          );
+        })}
       </div>
     </section>
   );

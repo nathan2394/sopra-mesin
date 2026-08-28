@@ -16,6 +16,7 @@ function loadCollapsed(): boolean {
 
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -28,9 +29,9 @@ export function AppShell() {
   return (
     <ScheduleOptimizationProvider>
       <div className="flex min-h-screen bg-slate-50">
-        <Sidebar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
+        <Sidebar collapsed={collapsed} mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
         <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
+          <Topbar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} onOpenMobile={() => setMobileMenuOpen(true)} />
           <main id="main-content" className="min-w-0 flex-1">
             <Outlet />
           </main>
