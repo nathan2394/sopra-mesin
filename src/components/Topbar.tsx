@@ -41,7 +41,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
 
   return (
     <header className="sticky top-0 z-10 flex h-13.25 shrink-0 items-center justify-between border-b border-slate-200 bg-white px-5">
-      <button type="button" onClick={onOpenMobile} aria-label="Open menu" className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 md:hidden">
+      <button type="button" onClick={onOpenMobile} aria-label="Open menu" className="flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 xl:hidden">
         <Menu size={15} />
         <span>Menu</span>
       </button>
