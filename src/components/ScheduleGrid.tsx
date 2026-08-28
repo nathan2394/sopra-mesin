@@ -20,7 +20,7 @@ interface Props {
   onJobMoved?: (jobId: string, machineId: string, newBlockStart: Date) => void;
 }
 
-const INFO_COLS = "minmax(0,7fr) minmax(0,13fr) minmax(0,6fr) minmax(0,19fr)";
+const INFO_COLS = "minmax(0,8fr) minmax(0,10fr) minmax(0,10fr) minmax(0,17fr)";
 const GRID_COLS = `${INFO_COLS} minmax(0,55fr)`;
 
 export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, weekEnd, onWeekOffsetChange, isLoading, onSelectJob, onSelectMaintenance, onJobMoved }: Props) {
@@ -110,10 +110,10 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
 
         <div ref={headerScrollRef} data-testid="schedule-grid-header" className="hidden overflow-hidden bg-slate-50 md:block">
           <div className="grid min-w-[900px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order No.</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2!")}>Delivery Due</div>
-            <div className={ui.cx(ui.th, "flex items-center px-2! pl-3!")}>Production Window</div>
+            <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2!")}>Order No.</div>
+            <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2!")}>Item</div>
+            <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2!")}>Delivery Due</div>
+            <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2! pl-3!")}>Production Window</div>
             <div className="border-b border-l border-slate-200 bg-slate-50">
               <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
               <div className="grid grid-cols-7">{days.map((date) => <span key={date.toISOString()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{String(date.getDate()).padStart(2, "0")}</span>)}</div>
