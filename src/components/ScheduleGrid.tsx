@@ -108,8 +108,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             .map(([tone, label]) => <span key={label} className="flex items-center gap-1.5"><i className={`h-2.5 w-2.5 rounded-full ${tone}`} />{label}</span>)}
         </div>
 
-        <div ref={headerScrollRef} data-testid="schedule-grid-header" className="hidden overflow-hidden bg-slate-50 xl:block">
-          <div className="grid min-w-[1000px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
+        <div ref={headerScrollRef} data-testid="schedule-grid-header" className="hidden overflow-hidden bg-slate-50 md:block">
+          <div className="grid min-w-[900px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Order No.</div>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Item</div>
             <div className={ui.cx(ui.th, "flex items-center px-2!")}>Delivery Due</div>
@@ -122,10 +122,10 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         </div>
       </div>
 
-      <div data-testid="schedule-grid-body" className="hidden overflow-x-auto rounded-b-xl xl:block" onScroll={(event) => {
+      <div data-testid="schedule-grid-body" className="hidden overflow-x-auto rounded-b-xl md:block" onScroll={(event) => {
         if (headerScrollRef.current) headerScrollRef.current.scrollLeft = event.currentTarget.scrollLeft;
       }}>
-        <div className="grid min-w-[1000px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
+        <div className="grid min-w-[900px] w-full text-xs tabular-nums" style={{ gridTemplateColumns: GRID_COLS }}>
           {isLoading ? (
             <div role="status" className="col-span-5 flex items-center justify-center gap-2 px-4 py-8 text-center text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
           ) : groups.length === 0 ? (
@@ -168,7 +168,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
         </div>
       </div>
 
-      <div className="xl:hidden">
+      <div className="md:hidden">
         {isLoading ? (
           <div role="status" className="flex items-center justify-center gap-2 px-4 py-8 text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin text-brand-600" />Loading data...</div>
         ) : groups.length === 0 ? (

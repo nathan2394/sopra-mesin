@@ -49,7 +49,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
         type="button"
         onClick={onToggleCollapsed}
         aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        className="hidden items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 md:flex"
+        className="hidden items-center gap-1.5 rounded-md px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600 xl:flex"
       >
         {collapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
         <span>{collapsed ? "Expand" : "Collapse"}</span>
