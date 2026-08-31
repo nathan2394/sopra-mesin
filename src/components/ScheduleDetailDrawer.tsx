@@ -3,8 +3,7 @@ import { api } from "../api/client";
 import { Drawer } from "./Drawer";
 import { JobStatus, MaintenanceType } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
-import { CreatableSelect } from "../ui/CreatableSelect";
-import { Select } from "../ui/Select";
+import { CreatableSelect, Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
 import { formatDate, formatDateTime } from "../utils/dateFormat";
 

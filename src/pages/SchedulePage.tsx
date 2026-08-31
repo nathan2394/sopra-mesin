@@ -25,7 +25,7 @@ interface MoveNotice {
   editing: boolean;
   editDate: string;
   editTime: string;
-  cascadedScheduleIds: string[];
+  previousStartsAt: Record<string, string>;
 }
 
 const inputDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -271,8 +271,8 @@ export function SchedulePage() {
       const halfHour = 30 * 60_000;
       startAt = new Date(Math.ceil((Date.now() + halfHour) / halfHour) * halfHour);
     }
-    const cascadedScheduleIds = await moveJob(jobId, machineId, startAt);
-    if (!cascadedScheduleIds) return;
+    const previousStartsAt = await moveJob(jobId, machineId, startAt);
+    if (!previousStartsAt) return;
     setMoveNotice({
       jobId,
       machineId,
@@ -282,7 +282,7 @@ export function SchedulePage() {
       editing: false,
       editDate: inputDate(startAt),
       editTime: inputTime(startAt),
-      cascadedScheduleIds,
+      previousStartsAt,
     });
   };
 
@@ -392,16 +392,15 @@ export function SchedulePage() {
           )}
           <div className="mt-2.5 flex gap-3 pl-11">
             <button type="button" className="text-xs font-semibold text-slate-500 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
-              if (await moveJob(moveNotice.jobId, moveNotice.machineId, moveNotice.previousStart, moveNotice.cascadedScheduleIds)) setMoveNotice(null);
+              if (await moveJob(moveNotice.jobId, moveNotice.machineId, moveNotice.previousStart, moveNotice.previousStartsAt)) setMoveNotice(null);
             }}>Undo</button>
             {moveNotice.editing ? (
               <button type="button" disabled={invalidEdit} className="text-xs font-semibold text-brand-600 transition hover:text-brand-700 disabled:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
                 if (!editedStart) return;
-                const movedIds = await moveJob(moveNotice.jobId, moveNotice.machineId, editedStart,
-                  editedStart < moveNotice.startAt ? moveNotice.cascadedScheduleIds : undefined);
-                if (!movedIds) return;
+                const previousStartsAt = await moveJob(moveNotice.jobId, moveNotice.machineId, editedStart);
+                if (!previousStartsAt) return;
                 setMoveNotice({ ...moveNotice, startAt: editedStart, editing: false,
-                  cascadedScheduleIds: [...new Set([...moveNotice.cascadedScheduleIds, ...movedIds])] });
+                  previousStartsAt: { ...previousStartsAt, ...moveNotice.previousStartsAt } });
               }}>Save time</button>
             ) : (
               <button type="button" className="text-xs font-semibold text-brand-600 transition hover:text-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={() => setMoveNotice({ ...moveNotice, editing: true })}>Edit time</button>

@@ -9,9 +9,8 @@ import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MaintenanceType } from "../types";
 import type { MaintenanceWindow } from "../types";
 import { formatDate } from "../utils/dateFormat";
-import { CreatableSelect } from "../ui/CreatableSelect";
 import { DataTable } from "../ui/DataTable";
-import { MultiSelect, Select } from "../ui/Select";
+import { CreatableSelect, MultiSelect, Select } from "../ui/Select";
 import { StatsRow, StatCard } from "../ui/StatCard";
 import * as ui from "../ui/classNames";
 
@@ -248,16 +247,18 @@ export function MaintenancePage() {
   const visibleReasons = maintenanceReasons.filter((item) => item.maintenanceType === mwType);
 
   useEffect(() => {
+    if (editingMaintenance && editingMaintenance.type === mwType) return;
     if (!visibleReasons.some((item) => item.reason === mwReason)) setMwReason(visibleReasons[0]?.reason ?? "");
-  }, [mwType, maintenanceReasons]);
+  }, [mwType, maintenanceReasons, editingMaintenance]);
 
   useEffect(() => {
+    if (editingMaintenance?.type === mwType && editingMaintenance.reason === mwReason) return;
     const selected = maintenanceReasons.find((item) => item.maintenanceType === mwType && item.reason === mwReason);
     if (selected) {
       setMwDuration(selected.duration);
       setMwDurationUnit(selected.durationUnit.toLowerCase() as DurationUnit);
     }
-  }, [maintenanceReasons, mwReason, mwType]);
+  }, [maintenanceReasons, mwReason, mwType, editingMaintenance]);
 
   useEffect(() => {
     if (maintenancePagination.totalPages > 0 && maintenancePage > maintenancePagination.totalPages) setMaintenancePage(maintenancePagination.totalPages);

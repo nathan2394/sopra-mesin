@@ -13,7 +13,8 @@ const formatClock = (date: Date) => date.toLocaleTimeString("en-GB", { hour: "2-
 
 export function scheduleBlockGeometry(start: Date, end: Date, weekStart: Date) {
   const startDay = startOfDay(start).getTime();
-  const endDay = startOfDay(end).getTime();
+  // Intervals are end-exclusive: midnight belongs to the following day.
+  const endDay = startOfDay(new Date(end.getTime() - 1)).getTime();
   const weekStartDay = startOfDay(weekStart).getTime();
   const weekEndDay = weekStartDay + 6 * DAY_MS;
   const visibleStartDay = Math.max(startDay, weekStartDay);

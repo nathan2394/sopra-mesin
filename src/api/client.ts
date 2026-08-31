@@ -101,11 +101,3 @@ export async function loginWithGoogle(credential: string) {
   });
   saveAuth(auth);
 }
-
-export async function register(username: string, email: string, password: string) {
-  const auth = await api<AuthResult>("/auth/register", {
-    method: "POST",
-    body: JSON.stringify({ username, email, password }),
-  });
-  saveAuth(auth);
-}
