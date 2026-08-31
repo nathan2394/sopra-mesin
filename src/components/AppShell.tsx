@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { ScheduleOptimizationProvider } from "../hooks/useScheduleOptimization";
 
 const COLLAPSE_KEY = "sopra-pps-sidebar-collapsed";
 
@@ -15,6 +16,7 @@ function loadCollapsed(): boolean {
 
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(loadCollapsed);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -25,12 +27,16 @@ export function AppShell() {
   }, [collapsed]);
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <Outlet />
+    <ScheduleOptimizationProvider>
+      <div className="flex min-h-screen bg-slate-50">
+        <Sidebar collapsed={collapsed} mobileOpen={mobileMenuOpen} onCloseMobile={() => setMobileMenuOpen(false)} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} onOpenMobile={() => setMobileMenuOpen(true)} />
+          <main id="main-content" className="min-w-0 flex-1">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </ScheduleOptimizationProvider>
   );
 }
