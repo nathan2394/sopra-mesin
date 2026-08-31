@@ -39,6 +39,7 @@ interface ApiJob {
   blockingMaintenanceId?: number;
   blockingMaintenanceReason?: string;
   rescheduledScheduleIds?: number[];
+  previousStartsAt?: Record<string, string>;
   status: ScheduleJob["status"];
   order?: { orderLineId: number; orderNumber: string; purchaseOrderNumber?: string; customerName?: string; itemCode?: string };
 }
@@ -337,21 +338,22 @@ export function useProduction(options: ProductionOptions = {}) {
         body: JSON.stringify(jobBody({ ...current, ...patch })),
       });
       setScheduleJobs((rows) => rows.map((row) => row.id === id ? jobFromApi(updated) : row));
+      await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
       notify("success", "Production schedule updated successfully.");
       return true;
     } catch (cause) { report(cause); return false; }
-  }, [scheduleJobs]);
+  }, [refreshMaintenance, refreshSchedules, scheduleJobs]);
 
-  const moveJob = useCallback(async (id: string, _machineId: string, start: Date, cascadeScheduleIds?: string[]) => {
+  const moveJob = useCallback(async (id: string, _machineId: string, start: Date, restoreStartsAt?: Record<string, string>) => {
     const current = scheduleJobs.find((job) => job.id === id);
     if (!current) return false;
     try {
       const updated = await api<ApiJob>(`/schedules/${id}/reschedule`, {
         method: "PATCH",
-        body: JSON.stringify({ startsAt: localDateTime(start), cascadeScheduleIds: cascadeScheduleIds?.map(Number) }),
+        body: JSON.stringify({ startsAt: localDateTime(start), restoreStartsAt }),
       });
       await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
-      return updated.rescheduledScheduleIds?.map(String) ?? [];
+      return updated.previousStartsAt ?? {};
     } catch (cause) { report(cause); return false; }
   }, [refreshMaintenance, refreshSchedules, scheduleJobs]);
 

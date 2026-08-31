@@ -2,15 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
-import { OrderTable, type SortKey } from "../components/OrderTable";
 import { OrderForm } from "../components/OrderForm";
 import { PageHeader } from "../components/PageHeader";
 import { OrderSourceType } from "../types";
 import type { Order, OrderDraft } from "../types";
 import { computeOrderTotals } from "../utils/orderMath";
+import { formatDate } from "../utils/dateFormat";
+import { DataTable } from "../ui/DataTable";
 import { StatsRow, StatCard } from "../ui/StatCard";
 import { Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
+
+type SortKey = "orderNo" | "customerName" | "customerPoNo" | "qty" | "deliveryDate";
 
 const SOURCE_LABEL: Record<OrderSourceType, string> = {
   [OrderSourceType.SoPaid]: "SO Paid",
@@ -19,6 +22,16 @@ const SOURCE_LABEL: Record<OrderSourceType, string> = {
   [OrderSourceType.ManualRequest]: "Manual Request",
   [OrderSourceType.ManualForecast]: "Manual Forecast",
 };
+
+const SOURCE_CLASS: Record<OrderSourceType, string> = {
+  [OrderSourceType.SoPaid]: ui.badgeSo,
+  [OrderSourceType.ScUnpaid]: ui.badgeSc,
+  [OrderSourceType.PiUnpaid]: ui.badgePi,
+  [OrderSourceType.ManualRequest]: ui.badgeSc,
+  [OrderSourceType.ManualForecast]: ui.badgePi,
+};
+
+const sortableHeaderClass = "whitespace-nowrap text-2xs font-semibold uppercase tracking-[0.06em] hover:text-slate-600";
 
 export function OrdersPage() {
   const [page, setPage] = useState(1);
@@ -132,4 +145,37 @@ export function OrdersPage() {
 
     </div>
   );
+}
+
+interface OrderTableProps {
+  orders: Order[];
+  onEdit: (order: Order) => void;
+  onDelete: (order: Order) => void;
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
+  onPageChange: (page: number) => void;
+  isLoading?: boolean;
+}
+
+function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagination, onPageChange, isLoading }: OrderTableProps) {
+  return <DataTable
+    rows={orders}
+    rowKey={(order) => order.id}
+    emptyText="No orders match your filters."
+    isLoading={isLoading}
+    rowClassName={() => "hover:bg-slate-50"}
+    columns={[
+      { key: "source", header: "Source", cell: (order) => <span className={SOURCE_CLASS[order.sourceType]}>{SOURCE_LABEL[order.sourceType]}</span> },
+      { key: "orderNo", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("orderNo")}>Order No.{sortKey === "orderNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.orderNo },
+      { key: "customer", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerName")}>Customer{sortKey === "customerName" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerName || "-" },
+      { key: "po", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerPoNo")}>Customer PO #{sortKey === "customerPoNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerPoNo || "-" },
+      { key: "items", header: "Items", cell: (order) => <>{order.items[0]?.description ?? "-"}{order.items.length > 1 && <span className={ui.muted}> +{order.items.length - 1} more</span>}</> },
+      { key: "qty", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("qty")}>Total Qty{sortKey === "qty" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => computeOrderTotals(order.items).qty.toLocaleString() },
+      { key: "delivery", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("deliveryDate")}>Delivery date{sortKey === "deliveryDate" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => formatDate(order.deliveryDate) },
+      { key: "actions", header: "", className: "whitespace-nowrap text-right", cell: (order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <><button type="button" className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button><button type="button" className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button></> : null },
+    ]}
+    pagination={{ ...pagination, onPageChange, label: "Orders" }}
+  />;
 }

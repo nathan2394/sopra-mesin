@@ -69,7 +69,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
               : <Bell size={16} />}
             {unread && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-white" />}
           </summary>
-          <section className="absolute right-0 top-[calc(100%+0.5rem)] w-80 rounded-lg border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
+          <section className="fixed inset-x-4 top-15 sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-80 rounded-lg border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-50 ${status.color}`}>
                 <StatusIcon size={16} className={status.spin ? "animate-spin" : ""} />
