@@ -19,7 +19,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
   const job = optimization.latest;
   const active = job?.status === "Queued" || job?.status === "Processing";
   const unread = Boolean(job && !job.isRead && (job.status === "Ready" || job.status === "Failed"));
-  const hasNotification = Boolean(active || optimization.busy || job?.status === "Ready" || job?.status === "Failed");
+  const hasNotification = Boolean(active || optimization.busy || job?.status === "Ready" || (job?.status === "Failed" && !job.isRead));
   const status = active
     ? { title: "Optimizing schedule", copy: "The result will appear here when it is ready.", Icon: LoaderCircle, color: "text-brand-600", spin: true }
     : job?.status === "Ready"
@@ -61,7 +61,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
           ref={notificationRef}
           className="group relative [&>summary::-webkit-details-marker]:hidden"
           onToggle={(event) => {
-            if (event.currentTarget.open && job && !active && !job.isRead) void optimization.markRead(job.id).catch(() => undefined);
+            if (!event.currentTarget.open && job && !active && !job.isRead) void optimization.markRead(job.id).catch(() => undefined);
           }}
         >
           <summary className="relative flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" aria-label="Optimization notifications">
