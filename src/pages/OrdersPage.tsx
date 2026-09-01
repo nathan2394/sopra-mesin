@@ -86,7 +86,7 @@ export function OrdersPage() {
       <PageHeader
         breadcrumb={[]}
         title="Orders"
-        subtitle="Imported demand and manually entered requests or forecasts."
+        subtitle="Review imported orders and manage production requests and forecasts."
         actions={<button type="button" className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New order</button>}
       />
 
@@ -122,7 +122,7 @@ export function OrdersPage() {
             ...Object.values(OrderSourceType).map((s) => ({ value: s, label: SOURCE_LABEL[s] })),
           ]}
         />
-        <span className={ui.muted}>{orders.length} of {pagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
 
       <OrderTable

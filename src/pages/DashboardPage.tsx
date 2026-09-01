@@ -52,7 +52,7 @@ export function DashboardPage() {
       <PageHeader
         breadcrumb={[]}
         title="Dashboard"
-        subtitle="Snapshot of open demand and the production line."
+        subtitle="Monitor open orders, production progress, machine availability, and upcoming deliveries."
       />
 
       <StatsRow>

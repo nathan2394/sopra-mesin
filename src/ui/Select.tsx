@@ -13,16 +13,17 @@ interface Props {
   onChange: (value: string) => void;
   options: SelectOption[];
   buttonClassName?: string;
+  className?: string;
   disabled?: boolean;
 }
 
-export function Select({ value, onChange, options, buttonClassName, disabled }: Props) {
+export function Select({ value, onChange, options, buttonClassName, className, disabled }: Props) {
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
   const visible = options.filter((option) => `${option.label} ${option.value}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return <Combobox value={value} onChange={(next) => next !== null && onChange(next)} onClose={() => setQuery("")} disabled={disabled}>
-    <div className="relative">
+    <div className={cx("relative", className)}>
       <ComboboxButton className={buttonClassName ?? selectButton}>
         <span className="block truncate">{selected?.label ?? value}</span>
         <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2"><ChevronsUpDown className="h-4 w-4 opacity-60" /></span>

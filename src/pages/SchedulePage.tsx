@@ -295,7 +295,7 @@ export function SchedulePage() {
       <PageHeader
         breadcrumb={[]}
         title="Production Schedule"
-        subtitle="Review the weekly production plan. Drag schedule bars on desktop, or tap an entry to view its details."
+        subtitle="Plan production orders and maintenance across the weekly machine timeline."
         actions={<button type="button" disabled={applyingOptimization || submittingOptimization || optimization.busy} onClick={() => void optimizeSchedule()} className={ui.btnSecondary}><WandSparkles size={14} />{optimization.busy ? "Optimization running" : submittingOptimization ? "Starting..." : "Optimize Schedule"}</button>}
       />
 
