@@ -60,7 +60,7 @@ export function MachinesPage() {
       <PageHeader
         breadcrumb={[]}
         title="Machines"
-        subtitle="Machine master data."
+        subtitle="Manage production machines, availability, types, and assigned schedules."
         actions={<button className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New machine</button>}
       />
 
@@ -85,7 +85,7 @@ export function MachinesPage() {
           buttonClassName={ui.filterSelectButton}
           options={[{ value: "All", label: "All statuses" }, { value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]}
         />
-        <span className={ui.muted}>{machines.length} of {machinePagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{machines.length} of {machinePagination.totalItems} shown</span>
       </div>
 
       <DataTable

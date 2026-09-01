@@ -66,8 +66,8 @@ export function ScheduleOptimizationProvider({ children }: PropsWithChildren) {
       setStatus((current) => ({ ...current, latest: current.latest?.id === id ? job : current.latest }));
     },
     markApplied: async (id) => {
-      const job = await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/applied`, { method: "POST" });
-      setStatus({ busy: false, latest: job });
+      await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/applied`, { method: "POST" });
+      setStatus({ busy: false, latest: null });
     },
   }), [refresh, status]);
 

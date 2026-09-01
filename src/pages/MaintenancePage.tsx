@@ -381,7 +381,7 @@ export function MaintenancePage() {
       <PageHeader
         breadcrumb={[]}
         title="Maintenance"
-        subtitle="Maintenance and downtime windows."
+        subtitle="Manage setup, preventive, and corrective maintenance for each machine."
         actions={
           <>
             <input ref={importInput} className="hidden" type="file" accept=".xlsx" onChange={async (event) => {
@@ -401,8 +401,8 @@ export function MaintenancePage() {
               }
               event.target.value = "";
             }} />
-            <button className={ui.btnSecondary} type="button" onClick={() => importInput.current?.click()}><Upload size={15} /> Import xlsx</button>
-            <a className={ui.btnSecondary} href="/maintenance-schedule-template.xlsx" download><Download size={15} /> Download Format</a>
+            <button className={ui.btnSecondary} type="button" onClick={() => importInput.current?.click()}><Upload size={15} /><span className="sm:hidden">Import</span><span className="hidden sm:inline">Import xlsx</span></button>
+            <a className={ui.btnSecondary} href="/maintenance-schedule-template.xlsx" download><Download size={15} /><span className="sm:hidden">Template</span><span className="hidden sm:inline">Download Format</span></a>
             <button className={ui.btnPrimary} type="button" onClick={openAddDrawer}><Plus size={15} /> Add Schedule</button>
           </>
         }
@@ -421,6 +421,7 @@ export function MaintenancePage() {
           value={maintenanceMachineFilter}
           onChange={(value) => { setMaintenanceMachineFilter(value); setMaintenancePage(1); }}
           buttonClassName={ui.filterSelectButton}
+          className="col-span-2 sm:col-span-1"
           options={[{ value: "All", label: "All machines" }, ...machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name} ${machine.machineType}` }))]}
         />
         <Select
@@ -440,7 +441,7 @@ export function MaintenancePage() {
           buttonClassName={ui.filterSelectButton}
           options={[{ value: "All", label: "All patterns" }, { value: "One Time", label: "One time" }, { value: "Recurring", label: "Recurring" }]}
         />
-        <span className={ui.muted}>{maintenanceWindows.length} of {maintenancePagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{maintenanceWindows.length} of {maintenancePagination.totalItems} shown</span>
       </div>
 
       <DataTable

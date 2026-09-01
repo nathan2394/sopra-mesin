@@ -83,7 +83,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
   return (
     <section className="overflow-visible rounded-xl border border-slate-200 bg-white">
       <div ref={stickySentinelRef} aria-hidden="true" />
-      <div className={ui.cx("sticky top-13.25 z-20 rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
+      <div className={ui.cx("sticky top-13.25 z-[5] rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
         <div className="grid grid-cols-1 gap-3 rounded-t-xl border-b border-slate-200 p-4 lg:grid-cols-[220px_150px_1fr] lg:items-end">
           <div className="text-2xs font-medium text-slate-500">
             <div>Week</div>
