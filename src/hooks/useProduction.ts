@@ -51,6 +51,20 @@ interface ProductionOptions {
   schedules?: { startAt?: Date; endAt?: Date };
 }
 
+interface MachineSummary {
+  totalMachines: number;
+  active: number;
+  inactive: number;
+  scheduledJobs: number;
+}
+
+interface MaintenanceSummary {
+  totalWindows: number;
+  recurring: number;
+  oneTime: number;
+  machines: number;
+}
+
 const machineFromApi = (machine: ApiMachine): Machine => ({ ...machine, id: String(machine.id) });
 const windowFromApi = (window: ApiWindow): MaintenanceWindow => ({
   ...window,
@@ -140,6 +154,8 @@ export function useProduction(options: ProductionOptions = {}) {
   const [schedulesLoading, setSchedulesLoading] = useState(loadSchedules);
   const [machinePagination, setMachinePagination] = useState({ page: machinePage, pageSize: machinePageSize, totalItems: 0, totalPages: 0 });
   const [maintenancePagination, setMaintenancePagination] = useState({ page: maintenancePage, pageSize: maintenancePageSize, totalItems: 0, totalPages: 0 });
+  const [machineSummary, setMachineSummary] = useState<MachineSummary>({ totalMachines: 0, active: 0, inactive: 0, scheduledJobs: 0 });
+  const [maintenanceSummary, setMaintenanceSummary] = useState<MaintenanceSummary>({ totalWindows: 0, recurring: 0, oneTime: 0, machines: 0 });
 
   const refreshMachines = useCallback(async (silent = false) => {
     if (!loadMachines) return;
@@ -149,9 +165,10 @@ export function useProduction(options: ProductionOptions = {}) {
       if (machineSearch) query.set("search", machineSearch);
       if (machineType) query.set("type", machineType);
       if (machineIsActive !== undefined) query.set("isActive", String(machineIsActive));
-      const rows = await api<PagedResult<ApiMachine>>(`/machines?${query}`);
+      const rows = await api<PagedResult<ApiMachine, MachineSummary>>(`/machines?${query}`);
       setMachines(rows.items.map(machineFromApi));
       setMachinePagination({ page: rows.page, pageSize: rows.pageSize, totalItems: rows.totalItems, totalPages: rows.totalPages });
+      if (rows.summary) setMachineSummary(rows.summary);
     } catch (cause) {
       report(cause);
     } finally {
@@ -183,9 +200,10 @@ export function useProduction(options: ProductionOptions = {}) {
       if (maintenanceScheduleType) query.set("scheduleType", maintenanceScheduleType);
       if (maintenanceStartAt) query.set("startAt", localDateTime(maintenanceStartAt));
       if (maintenanceEndAt) query.set("endAt", localDateTime(maintenanceEndAt));
-      const rows = await api<PagedResult<ApiWindow>>(`/maintenance-windows?${query}`);
+      const rows = await api<PagedResult<ApiWindow, MaintenanceSummary>>(`/maintenance-windows?${query}`);
       setMaintenanceWindows(rows.items.map(windowFromApi));
       setMaintenancePagination({ page: rows.page, pageSize: rows.pageSize, totalItems: rows.totalItems, totalPages: rows.totalPages });
+      if (rows.summary) setMaintenanceSummary(rows.summary);
     } catch (cause) {
       report(cause);
     } finally {
@@ -473,8 +491,10 @@ export function useProduction(options: ProductionOptions = {}) {
     machines,
     machineOptions,
     machinePagination,
+    machineSummary,
     maintenanceWindows,
     maintenancePagination,
+    maintenanceSummary,
     scheduleJobs,
     isLoading: machinesLoading || machineOptionsLoading || maintenanceLoading || schedulesLoading,
     addMachine,

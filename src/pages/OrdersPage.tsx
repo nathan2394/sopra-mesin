@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
@@ -42,7 +42,7 @@ export function OrdersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   const searchQuery = useDebouncedValue(search.trim());
-  const { orders, pagination, addOrder, updateOrder, removeOrder, isLoading } = useOrders(
+  const { orders, pagination, summary, addOrder, updateOrder, removeOrder, isLoading } = useOrders(
     page,
     15,
     searchQuery,
@@ -56,20 +56,6 @@ export function OrdersPage() {
       setPage(pagination.totalPages);
     }
   }, [page, pagination.totalPages]);
-
-  const stats = useMemo(() => {
-    const bySource = (t: OrderSourceType) => orders.filter((o) => o.sourceType === t);
-    const totalQty = orders.reduce((sum, o) => sum + computeOrderTotals(o.items).qty, 0);
-    return {
-      total: pagination.totalItems,
-      so: bySource(OrderSourceType.SoPaid).length,
-      sc: bySource(OrderSourceType.ScUnpaid).length,
-      pi: bySource(OrderSourceType.PiUnpaid).length,
-      mr: bySource(OrderSourceType.ManualRequest).length,
-      mf: bySource(OrderSourceType.ManualForecast).length,
-      totalQty,
-    };
-  }, [orders, pagination.totalItems]);
 
   const handleSort = (key: SortKey) => {
     setPage(1);
@@ -91,13 +77,13 @@ export function OrdersPage() {
       />
 
       <StatsRow>
-        <StatCard value={stats.total} label="Total orders" />
-        <StatCard value={stats.so} label="SO Paid" />
-        <StatCard value={stats.sc} label="SC Unpaid" />
-        <StatCard value={stats.pi} label="PI Unpaid" />
-        <StatCard value={stats.mr} label="Manual Request" />
-        <StatCard value={stats.mf} label="Manual Forecast" />
-        <StatCard value={stats.totalQty.toLocaleString()} label="Qty shown (pcs)" />
+        <StatCard value={summary.totalOrders} label="Total orders" />
+        <StatCard value={summary.soPaid} label="SO Paid" />
+        <StatCard value={summary.scUnpaid} label="SC Unpaid" />
+        <StatCard value={summary.piUnpaid} label="PI Unpaid" />
+        <StatCard value={summary.manualRequest} label="Manual Request" />
+        <StatCard value={summary.manualForecast} label="Manual Forecast" />
+        <StatCard value={summary.totalQuantity.toLocaleString()} label="Total qty (pcs)" />
       </StatsRow>
 
       <div className={ui.filtersRow}>

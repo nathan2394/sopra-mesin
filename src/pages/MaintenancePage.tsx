@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { api } from "../api/client";
 import { Drawer } from "../components/Drawer";
@@ -132,7 +132,7 @@ function MaintenanceScheduleDrawer({
                 options={[
                   { value: MaintenanceType.Preventive, label: "Preventive Maintenance" },
                   { value: MaintenanceType.Corrective, label: "Corrective Maintenance" },
-                  { value: MaintenanceType.Trial, label: "Trial Maintenance" },
+                  { value: MaintenanceType.Trial, label: "Trial" },
                 ]}
               />
             </label>
@@ -206,6 +206,7 @@ export function MaintenancePage() {
     machineOptions,
     maintenanceWindows,
     maintenancePagination,
+    maintenanceSummary,
     addMaintenanceWindows,
     updateMaintenanceWindow,
     removeMaintenanceWindow,
@@ -264,16 +265,9 @@ export function MaintenancePage() {
     if (maintenancePagination.totalPages > 0 && maintenancePage > maintenancePagination.totalPages) setMaintenancePage(maintenancePagination.totalPages);
   }, [maintenancePage, maintenancePagination.totalPages]);
 
-  const stats = useMemo(() => ({
-    total: maintenancePagination.totalItems,
-    machines: machineOptions.length,
-    oneTime: maintenanceWindows.filter((window) => window.scheduleType === "One Time").length,
-    recurring: maintenanceWindows.filter((window) => window.scheduleType === "Recurring").length,
-  }), [machineOptions.length, maintenancePagination.totalItems, maintenanceWindows]);
-
   const machineLabel = (id: string) => {
     const machine = machineOptions.find((row) => row.id === id);
-    return machine ? `${machine.name} · ${machine.machineType}` : "—";
+    return machine?.lineCode ?? "—";
   };
 
   const resetForm = () => {
@@ -409,10 +403,10 @@ export function MaintenancePage() {
       />
 
       <StatsRow>
-        <StatCard value={stats.total} label="Maintenance windows" />
-        <StatCard value={stats.recurring} label="Recurring" />
-        <StatCard value={stats.oneTime} label="One time" />
-        <StatCard value={stats.machines} label="Machines" />
+        <StatCard value={maintenanceSummary.totalWindows} label="Maintenance windows" />
+        <StatCard value={maintenanceSummary.recurring} label="Recurring" />
+        <StatCard value={maintenanceSummary.oneTime} label="One time" />
+        <StatCard value={maintenanceSummary.machines} label="Machines" />
       </StatsRow>
 
       <div className={ui.filtersRow}>
@@ -432,7 +426,7 @@ export function MaintenancePage() {
             { value: "All", label: "All types" },
             { value: MaintenanceType.Preventive, label: "Preventive Maintenance" },
             { value: MaintenanceType.Corrective, label: "Corrective Maintenance" },
-            { value: MaintenanceType.Trial, label: "Trial Maintenance" },
+            { value: MaintenanceType.Trial, label: "Trial" },
           ]}
         />
         <Select
@@ -449,7 +443,7 @@ export function MaintenancePage() {
         rowKey={(window) => window.id}
         emptyText="No maintenance windows logged."
         columns={[
-          { key: "machine", header: "Machine", cell: (window) => machineLabel(window.machineId) },
+          { key: "machine", header: "Machine code", cell: (window) => machineLabel(window.machineId) },
           { key: "type", header: "Type", cell: (window) => <span className={ui.badgeNeutral}>{window.type.replace(" Maintenance", "")}</span> },
           { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${new Date(window.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}-${new Date(window.endAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` : "One time" },
           { key: "next", header: "Next", cell: (window) => formatDate(window.startAt) },
