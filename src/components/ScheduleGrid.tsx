@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
-import { JobStatus, MaintenanceType } from "../types";
+import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
@@ -139,7 +139,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
               <div className="contents" key={groupMachineId}>
                 <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
                   <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                  <span>{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                  <span>{machine?.lineCode ?? "Unassigned"}</span>
                   <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
                 </button>
                 {!collapsed && rows.map((row) => row.type === "job" ? (
@@ -156,7 +156,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                 ) : (
                   <div className="contents group" key={`maintenance-${row.window.id}`}>
                     <div className="col-span-4 grid min-h-14 min-w-0 bg-red-50 text-left text-red-600 group-hover:bg-red-100" style={{ gridTemplateColumns: INFO_COLS }}>
-                      <span className="col-span-3 flex min-w-0 items-center gap-2 px-3 py-2"><Wrench size={14} className="shrink-0" /><span className="truncate font-semibold">{row.window.type}</span></span>
+                      <span className="col-span-3 flex min-w-0 items-center gap-2 px-3 py-2"><Wrench size={14} className="shrink-0" /><span className="truncate font-semibold">{maintenanceTypeLabel(row.window.type)}</span></span>
                       <span className="flex min-w-0 items-center whitespace-nowrap px-2 py-2 pl-3 text-2xs font-medium">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
                     </div>
                     <MaintenanceBar window={row.window} weekStart={weekStart} machine={machineById.get(row.window.machineId)} onSelect={onSelectMaintenance} wrapperClassName="bg-red-50 group-hover:bg-red-100" />
@@ -181,7 +181,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             <div key={`agenda-${groupMachineId}`}>
               <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="flex h-10 w-full items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 <ChevronRight size={14} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                <span className="min-w-0 flex-1 truncate">{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                <span className="min-w-0 flex-1 truncate">{machine?.lineCode ?? "Unassigned"}</span>
                 <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-2xs font-medium text-slate-500">{rows.length}</span>
               </button>
               {!collapsed && <div className="divide-y divide-slate-200">
@@ -202,7 +202,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                   <button type="button" key={`agenda-maintenance-${row.window.id}`} onClick={() => onSelectMaintenance?.(row.window)} className="flex w-full items-start gap-3 bg-red-50 px-3 py-3 text-left text-red-700 hover:bg-red-100">
                     <Wrench size={14} className="mt-0.5 shrink-0" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold">{row.window.type}</span>
+                      <span className="block truncate text-xs font-semibold">{maintenanceTypeLabel(row.window.type)}</span>
                       {row.window.reason && <span className="mt-0.5 block truncate text-xs text-red-600">{row.window.reason}</span>}
                       <span className="mt-1 block text-2xs tabular-nums text-red-600">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
                     </span>
@@ -258,13 +258,17 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
           window.removeEventListener("pointerup", pointerUp);
           window.removeEventListener("pointercancel", pointerCancel);
           element.style.transform = "translateX(0)";
+          if (!moved.current) {
+            onSelect?.(job);
+            return;
+          }
           const currentDay = Math.floor((startDay - weekStart.getTime()) / 86400000);
           const targetDay = Math.max(0, Math.min(6, currentDay + Math.round((upEvent.clientX - startX) / (timelineWidth / 7))));
           if (targetDay !== currentDay) {
             const next = new Date(start);
             next.setFullYear(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + targetDay);
             onMove?.(job.id, job.machineId, next);
-          } else if (!moved.current) onSelect?.(job);
+          }
         };
         const pointerCancel = () => {
           window.removeEventListener("pointermove", pointerMove);

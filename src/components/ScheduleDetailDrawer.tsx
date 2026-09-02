@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Drawer } from "./Drawer";
-import { JobStatus, MaintenanceType } from "../types";
+import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { CreatableSelect, Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
@@ -107,7 +107,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
 
   return (
     <Drawer
-      title={isMaintenance ? maintenance?.type ?? "Maintenance" : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
+      title={isMaintenance && maintenance ? maintenanceTypeLabel(maintenance.type) : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
       subtitle={machine ? `${machine.name} · ${machine.machineType}` : undefined}
       onClose={onClose}
       ariaLabel="Schedule detail"
@@ -175,7 +175,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
           {!isMaintenance && (
             <div className="rounded-lg bg-slate-50 p-4">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                <span className="text-sm font-semibold text-slate-900">Setup Maintenance</span>
+                <span className="text-sm font-semibold text-slate-900">Setup</span>
                 {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
               </div>
               {setupMaintenance ? (
@@ -184,7 +184,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
                   <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
                 </div>
-              ) : <p className="mt-2 text-xs text-slate-500">No setup maintenance linked to this order.</p>}
+              ) : <p className="mt-2 text-xs text-slate-500">No setup linked to this order.</p>}
             </div>
           )}
 

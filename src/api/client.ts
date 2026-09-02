@@ -11,12 +11,13 @@ interface ApiResponse<T> {
   data: T;
 }
 
-export interface PagedResult<T> {
+export interface PagedResult<T, TSummary = unknown> {
   items: T[];
   page: number;
   pageSize: number;
   totalItems: number;
   totalPages: number;
+  summary?: TSummary;
 }
 
 export const hasToken = () => Boolean(localStorage.getItem(TOKEN_KEY));
