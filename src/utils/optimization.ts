@@ -4,12 +4,13 @@ export interface OptimizedSchedule {
     machineId: number;
     preform: string;
     cavity: number;
+    quantity: number;
     startAt: string;
     endAt: string;
   }>;
   maintenanceSchedules: Array<{
     maintenanceId?: number;
-    itemId?: number;
+    itemId?: number[];
     type: string;
     machineId: number;
     startAt: string;
@@ -29,10 +30,14 @@ export function parseOptimizationResponse(value: unknown): OptimizedSchedule[] {
     const { orderSchedules, maintenanceSchedules } = candidate as Partial<OptimizedSchedule>;
     if (!Array.isArray(orderSchedules) || !Array.isArray(maintenanceSchedules)) throw new Error("AI response is missing orderSchedules or maintenanceSchedules.");
     if (!orderSchedules.length && !maintenanceSchedules.length) throw new Error("AI response candidate is empty.");
-    if (!orderSchedules.every((row) => isId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
+    if (!orderSchedules.every((row) => isId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
       throw new Error("AI response contains an invalid order schedule.");
     }
-    if (!maintenanceSchedules.every((row) => typeof row?.type === "string" && isId(row?.machineId) && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
+    if (!maintenanceSchedules.every((row) => {
+      const itemIdsAreValid = row?.itemId === undefined || Array.isArray(row.itemId) && row.itemId.length > 0 && row.itemId.every(isId);
+      const setupHasItems = row?.type?.toLowerCase() !== "setup" || Array.isArray(row.itemId) && row.itemId.length > 0;
+      return typeof row?.type === "string" && isId(row?.machineId) && itemIdsAreValid && setupHasItems && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt);
+    })) {
       throw new Error("AI response contains an invalid maintenance schedule.");
     }
     if (new Set(orderSchedules.map((row) => row.itemId)).size !== orderSchedules.length) {

@@ -9,7 +9,7 @@ import { getOrderPage } from "../hooks/useOrders";
 import { useProduction } from "../hooks/useProduction";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
 import { JobStatus, MaintenanceType } from "../types";
-import type { Order, ScheduleJob } from "../types";
+import type { MaintenanceWindow, Order, ScheduleJob } from "../types";
 import { formatDateTime, toJakartaDateTime } from "../utils/dateFormat";
 import { parseOptimizationResponse } from "../utils/optimization";
 import type { OptimizedSchedule } from "../utils/optimization";
@@ -51,7 +51,7 @@ export function SchedulePage() {
     value.setDate(value.getDate() + 7);
     return value;
   }, [weekStart]);
-  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, addCorrectiveMaintenance, getScheduleJob, loadOptimizationContext, applyOptimizationResponse, isLoading } = useProduction({
+  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, addCorrectiveMaintenance, getScheduleJob, getMaintenanceWindow, loadOptimizationContext, applyOptimizationResponse, isLoading } = useProduction({
     machines: { page: 1, pageSize: 100 },
     maintenance: { page: 1, pageSize: 100, startAt: weekStart, endAt: weekEnd },
     schedules: { startAt: weekStart, endAt: weekEnd },
@@ -59,6 +59,7 @@ export function SchedulePage() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | null>(null);
   const [linkedMaintenanceJob, setLinkedMaintenanceJob] = useState<{ maintenanceId: string; job: ScheduleJob } | null>(null);
+  const [linkedSetupMaintenance, setLinkedSetupMaintenance] = useState<MaintenanceWindow | null>(null);
   const [moveNotice, setMoveNotice] = useState<MoveNotice | null>(null);
   const [applyingOptimization, setApplyingOptimization] = useState(false);
   const [submittingOptimization, setSubmittingOptimization] = useState(false);
@@ -78,11 +79,25 @@ export function SchedulePage() {
 
   const selectedJob = scheduleJobs.find((job) => job.id === selectedJobId) ?? null;
   const selectedMaintenance = maintenanceWindows.find((window) => window.id === selectedMaintenanceId) ?? null;
-  const selectedSetupMaintenance = selectedJob ? maintenanceWindows.find((window) =>
+  const visibleSelectedSetupMaintenance = selectedJob ? maintenanceWindows.find((window) =>
     window.type === MaintenanceType.Setup &&
-    (window.affectedScheduleId === selectedJob.id ||
+    (window.id === selectedJob.setupMaintenanceId ||
+      window.affectedScheduleId === selectedJob.id ||
       (window.machineId === selectedJob.machineId && Date.parse(window.endAt) === Date.parse(selectedJob.startAt)))
   ) : undefined;
+  useEffect(() => {
+    const setupId = selectedJob?.setupMaintenanceId;
+    if (!setupId || visibleSelectedSetupMaintenance) return;
+    let active = true;
+    void getMaintenanceWindow(setupId).then((window) => {
+      if (active && window) setLinkedSetupMaintenance(window);
+    });
+    return () => { active = false; };
+  }, [getMaintenanceWindow, selectedJob?.setupMaintenanceId, visibleSelectedSetupMaintenance]);
+  const selectedSetupMaintenance = visibleSelectedSetupMaintenance ??
+    (linkedSetupMaintenance && linkedSetupMaintenance.id === selectedJob?.setupMaintenanceId
+      ? linkedSetupMaintenance
+      : undefined);
   const selectedCorrectiveMaintenance = selectedJob ? maintenanceWindows.find((window) =>
     window.type === MaintenanceType.Corrective && window.affectedScheduleId === selectedJob.id
   ) : undefined;
