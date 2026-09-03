@@ -10,6 +10,7 @@ interface ApiOrderLine {
   itemCode?: string;
   itemName: string;
   quantity: number;
+  importedAtUtc?: string;
 }
 
 interface ApiOrder {
@@ -60,6 +61,7 @@ const fromApi = (order: ApiOrder): Order => {
       itemCode: line.itemCode,
       description: line.itemName,
       qty: line.quantity,
+      importedAtUtc: line.importedAtUtc,
     })),
     createdAt: timestamp,
     updatedAt: timestamp,
