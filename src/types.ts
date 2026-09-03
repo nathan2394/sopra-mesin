@@ -93,6 +93,7 @@ export interface ScheduleJob {
   deliveryDate: string;
   sourceOrderRefs?: string;
   status: JobStatus;
+  setupMaintenanceId?: string;
   blockingMaintenanceId?: string;
   blockingMaintenanceReason?: string;
   customerName?: string;
