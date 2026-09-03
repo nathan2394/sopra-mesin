@@ -28,6 +28,11 @@ interface MoveNotice {
   previousStartsAt: Record<string, string>;
 }
 
+const jakartaDate = (value: string | number | Date) => {
+  const timestamp = typeof value === "string" && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? `${value}Z` : value;
+  return new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
+};
+
 const inputDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 const inputTime = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 export function SchedulePage() {
@@ -61,7 +66,6 @@ export function SchedulePage() {
   const [optimizationConfirmation, setOptimizationConfirmation] = useState<{
     jobId: number;
     orders: Order[];
-    optimizedItemIds: number[];
     deleteCount: number;
     candidate: OptimizedSchedule;
   } | null>(null);
@@ -119,6 +123,7 @@ export function SchedulePage() {
         loadOptimizationContext(),
       ]);
       const now = Date.now();
+      const today = jakartaDate(now);
       const historyStart = now - 7 * 24 * 60 * 60_000;
       const activeMachines = machines.filter((machine) => machine.isActive);
       const isBlocked = (job: typeof context.jobs[number]) =>
@@ -129,6 +134,7 @@ export function SchedulePage() {
         const deliveryAt = Date.parse(order.deliveryDate);
         if (order.deliveryDate && (!Number.isFinite(deliveryAt) || deliveryAt <= now)) return [];
         return order.items.flatMap((item) => {
+          if (!item.importedAtUtc || jakartaDate(item.importedAtUtc) !== today) return [];
           const itemId = Number(item.id);
           const job = context.jobs.find((row) => row.orderLineId === itemId);
           if (job && (job.isLocked || job.status !== JobStatus.Open || Date.parse(job.endAt) <= now)) return [];
@@ -149,13 +155,14 @@ export function SchedulePage() {
           }];
         });
       });
+      if (optimizable.length === 0) throw new Error("No order items were imported today.");
       const payload = {
       machines: activeMachines.map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
       machineHistory: activeMachines.map((machine) => ({
         machineId: Number(machine.id),
         productions: context.jobs
           .filter((job) => job.machineId === machine.id &&
-            ((Date.parse(job.startAt) < now && Date.parse(job.endAt) >= historyStart) || isBlocked(job)))
+            (job.isLocked || (Date.parse(job.startAt) < now && Date.parse(job.endAt) >= historyStart) || isBlocked(job)))
           .sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt))
           .map((job) => ({
             scheduleId: Number(job.id),
@@ -220,19 +227,20 @@ export function SchedulePage() {
     reviewedJobId.current = optimizationJobId;
     void (async () => {
       try {
-        const [detail, orders] = await Promise.all([optimization.get(optimizationJobId), loadOrders()]);
+        const [detail, orders, context] = await Promise.all([optimization.get(optimizationJobId), loadOrders(), loadOptimizationContext()]);
         if (!detail.response) throw new Error(detail.job.errorMessage ?? "Optimization result is not ready.");
-        const request = detail.request as { orders?: Array<{ itemId: number; scheduleId?: string | null }> };
-        const requestedOrders = request.orders ?? [];
         const candidate = parseOptimizationResponse(detail.response)[0];
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
-        const deleteCount = new Set(requestedOrders
-          .filter((row) => row.scheduleId && !returnedItemIds.has(row.itemId))
-          .map((row) => row.scheduleId)).size;
+        const activeCorrectiveScheduleIds = new Set(context.maintenance
+          .filter((window) => window.type === MaintenanceType.Corrective && window.affectedScheduleId && Date.parse(window.endAt) > Date.now())
+          .map((window) => window.affectedScheduleId));
+        const deleteCount = context.jobs.filter((job) =>
+          job.orderLineId && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
+          !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId)
+        ).length;
         setOptimizationConfirmation({
           jobId: optimizationJobId,
           orders,
-          optimizedItemIds: requestedOrders.map((row) => row.itemId),
           deleteCount,
           candidate,
         });
@@ -254,7 +262,7 @@ export function SchedulePage() {
     setApplyingOptimization(true);
     setOptimizationStage("apply");
     try {
-      if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate, confirmation.optimizedItemIds))
+      if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate))
         await optimization.markApplied(confirmation.jobId);
     } finally {
       setApplyingOptimization(false);

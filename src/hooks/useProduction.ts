@@ -386,18 +386,21 @@ export function useProduction(options: ProductionOptions = {}) {
     };
   }, []);
 
-  const applyOptimizationResponse = useCallback(async (orders: Order[], optimized: OptimizedSchedule, optimizedItemIds: number[]) => {
+  const applyOptimizationResponse = useCallback(async (orders: Order[], optimized: OptimizedSchedule) => {
     try {
       const [allJobs, existingMaintenance] = await Promise.all([
         api<ApiJob[]>("/schedules"),
         getAllMaintenance(),
       ]);
       const itemsById = new Map(orders.flatMap((order) => order.items.map((item) => [Number(item.id), { order, item }] as const)));
+      const now = Date.now();
+      const activeCorrectiveScheduleIds = new Set(existingMaintenance
+        .filter((row) => row.type === "Corrective Maintenance" && row.affectedScheduleId && Date.parse(row.endAt) > now)
+        .map((row) => Number(row.affectedScheduleId)));
       const protectedJobsByItemId = new Map(allJobs
-        .filter((job) => job.order && (job.isLocked || job.status !== "Open"))
+        .filter((job) => job.order && (job.isLocked || job.status !== "Open" || Date.parse(job.startsAt) <= now || activeCorrectiveScheduleIds.has(job.id)))
         .map((job) => [job.order!.orderLineId, job] as const));
       const protectedScheduleIds = new Set([...protectedJobsByItemId.values()].map((job) => job.id));
-      const optimizedItemIdSet = new Set(optimizedItemIds);
       const returnedItemIds = new Set(optimized.orderSchedules.map((row) => row.itemId));
       const claimedScheduleIds = new Set<number>();
 
@@ -439,7 +442,7 @@ export function useProduction(options: ProductionOptions = {}) {
       const replaceableScheduleIds = new Set(allJobs.filter((job) =>
         !job.isMaintenance &&
         !protectedScheduleIds.has(job.id) &&
-        job.order && optimizedItemIdSet.has(job.order.orderLineId)
+        job.order
       ).map((job) => job.id));
       const deleteScheduleIds = allJobs.filter((job) =>
         replaceableScheduleIds.has(job.id) &&
