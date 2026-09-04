@@ -113,8 +113,6 @@ const jobBody = (job: StoredJob) => ({
 
 const report = (cause: unknown) =>
   notify("error", cause instanceof Error ? cause.message : "API request failed");
-const localDateTime = (date: Date) =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
 const getAllMaintenance = async () => {
   const first = await api<PagedResult<ApiWindow>>("/maintenance-windows?page=1&pageSize=100");
   const rest = await Promise.all(Array.from({ length: first.totalPages - 1 }, (_, index) =>
@@ -200,8 +198,8 @@ export function useProduction(options: ProductionOptions = {}) {
       if (maintenanceMachineId) query.set("machineId", maintenanceMachineId);
       if (maintenanceType) query.set("type", maintenanceType);
       if (maintenanceScheduleType) query.set("scheduleType", maintenanceScheduleType);
-      if (maintenanceStartAt) query.set("startAt", localDateTime(maintenanceStartAt));
-      if (maintenanceEndAt) query.set("endAt", localDateTime(maintenanceEndAt));
+      if (maintenanceStartAt) query.set("startAt", toJakartaDateTime(maintenanceStartAt));
+      if (maintenanceEndAt) query.set("endAt", toJakartaDateTime(maintenanceEndAt));
       const rows = await api<PagedResult<ApiWindow, MaintenanceSummary>>(`/maintenance-windows?${query}`);
       setMaintenanceWindows(rows.items.map(windowFromApi));
       setMaintenancePagination({ page: rows.page, pageSize: rows.pageSize, totalItems: rows.totalItems, totalPages: rows.totalPages });
@@ -218,8 +216,8 @@ export function useProduction(options: ProductionOptions = {}) {
     if (!silent) setSchedulesLoading(true);
     try {
       const query = new URLSearchParams();
-      if (scheduleStartAt) query.set("startAt", localDateTime(scheduleStartAt));
-      if (scheduleEndAt) query.set("endAt", localDateTime(scheduleEndAt));
+      if (scheduleStartAt) query.set("startAt", toJakartaDateTime(scheduleStartAt));
+      if (scheduleEndAt) query.set("endAt", toJakartaDateTime(scheduleEndAt));
       const rows = await api<ApiJob[]>(`/schedules${query.size ? `?${query}` : ""}`);
       setScheduleJobs(rows.filter((job) => !job.isMaintenance).map(jobFromApi));
     } catch (cause) {
@@ -344,8 +342,8 @@ export function useProduction(options: ProductionOptions = {}) {
         method: "POST",
         body: JSON.stringify({
           machineId: Number(job.machineId),
-          startAt: localDateTime(startAt),
-          endAt: localDateTime(endAt),
+          startAt: toJakartaDateTime(startAt),
+          endAt: toJakartaDateTime(endAt),
           type: "Corrective Maintenance",
           reason,
           scheduleType: "One Time",
@@ -379,7 +377,7 @@ export function useProduction(options: ProductionOptions = {}) {
     try {
       const updated = await api<ApiJob>(`/schedules/${id}/reschedule`, {
         method: "PATCH",
-        body: JSON.stringify({ startsAt: localDateTime(start), restoreStartsAt }),
+        body: JSON.stringify({ startsAt: toJakartaDateTime(start), restoreStartsAt }),
       });
       await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
       return updated.previousStartsAt ?? {};

@@ -12,7 +12,7 @@ export interface OrderLineItem {
   itemCode?: string;
   description: string;
   qty: number;
-  importedAtUtc?: string;
+  importedAt?: string;
 }
 
 export interface Order {

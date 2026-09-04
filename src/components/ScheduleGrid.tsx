@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
 import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
-import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
+import { addWibDays, formatDate, formatMonthDay, formatScheduleDateTime, wibInputDate, wibInputDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
 import { ScheduleBlock } from "./ScheduleBlock";
 import * as ui from "../ui/classNames";
@@ -38,11 +38,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     return () => observer.disconnect();
   }, []);
   const machineById = useMemo(() => new Map(machines.map((machine) => [machine.id, machine])), [machines]);
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + index);
-    return date;
-  });
+  const days = Array.from({ length: 7 }, (_, index) => addWibDays(weekStart, index));
   const query = search.trim().toLowerCase();
   const visibleJobs = jobs.filter((job) =>
     (machineId === "All" || job.machineId === machineId) &&
@@ -89,7 +85,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             <div>Week</div>
             <div className="mt-1 grid h-9 grid-cols-[32px_minmax(0,1fr)_32px] items-stretch overflow-hidden rounded-md border border-slate-200 bg-white">
               <button type="button" className="grid h-full place-items-center border-r border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value - 1)} aria-label="Previous week"><ChevronLeft size={14} /></button>
-              <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 text-2xs font-semibold text-slate-700"><CalendarDays size={13} /><span className="truncate">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
+              <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 text-2xs font-semibold text-slate-700"><CalendarDays size={13} /><span className="truncate">{formatMonthDay(weekStart)} - {formatDate(weekEnd.getTime() - 1)}</span></div>
               <button type="button" className="grid h-full place-items-center border-l border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value + 1)} aria-label="Next week"><ChevronRight size={14} /></button>
             </div>
           </div>
@@ -115,8 +111,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2!")}>Delivery Due</div>
             <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2! pl-3!")}>Production Window</div>
             <div className="border-b border-l border-slate-200 bg-slate-50">
-              <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
-              <div className="grid grid-cols-7">{days.map((date) => <span key={date.toISOString()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{String(date.getDate()).padStart(2, "0")}</span>)}</div>
+              <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{formatDate(weekStart)} - {formatDate(weekEnd.getTime() - 1)}</div>
+              <div className="grid grid-cols-7">{days.map((date) => <span key={date.getTime()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{wibInputDate(date).slice(8, 10)}</span>)}</div>
             </div>
           </div>
         </div>
@@ -246,7 +242,7 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
         const element = event.currentTarget;
         const startX = event.clientX;
         const timelineWidth = element.parentElement?.clientWidth || 1;
-        const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+        const startDay = wibStartOfDay(start).getTime();
         moved.current = false;
         const pointerMove = (moveEvent: PointerEvent) => {
           const delta = moveEvent.clientX - startX;
@@ -265,8 +261,7 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
           const currentDay = Math.floor((startDay - weekStart.getTime()) / 86400000);
           const targetDay = Math.max(0, Math.min(6, currentDay + Math.round((upEvent.clientX - startX) / (timelineWidth / 7))));
           if (targetDay !== currentDay) {
-            const next = new Date(start);
-            next.setFullYear(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + targetDay);
+            const next = new Date(wibInputDateTime(wibInputDate(addWibDays(weekStart, targetDay)), wibInputTime(start)));
             onMove?.(job.id, job.machineId, next);
           }
         };
