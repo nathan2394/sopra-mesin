@@ -5,7 +5,7 @@ import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { CreatableSelect, Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
-import { formatDate, formatDateTime } from "../utils/dateFormat";
+import { formatDate, formatDateTime, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
 
 interface Props {
   job?: ScheduleJob;
@@ -25,19 +25,11 @@ interface DowntimeReason {
   estimatedHours: number;
 }
 
-const inputDate = (value: string) => {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
-const inputTime = (value: string) => {
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-};
-
-const mergeDateTime = (date: string, time: string) => `${date}T${time}:00`;
+const inputDate = wibInputDate;
+const inputTime = wibInputTime;
+const mergeDateTime = wibInputDateTime;
 const displayDateTime = (value: string) => `${formatDateTime(value)} WIB`;
-const displayTime = (value: string) => `${new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })} WIB`;
+const displayTime = (value: string) => `${wibInputTime(value)} WIB`;
 
 function DrawerDateTime({ value }: { value: string }) {
   return <><span className="hidden sm:inline">{displayDateTime(value)}</span><span className="sm:hidden"><span className="block">{formatDate(value)}</span><span className="mt-0.5 block text-slate-500">{displayTime(value)}</span></span></>;

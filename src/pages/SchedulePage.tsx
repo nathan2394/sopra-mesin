@@ -10,7 +10,7 @@ import { useProduction } from "../hooks/useProduction";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
 import { JobStatus, MaintenanceType } from "../types";
 import type { MaintenanceWindow, Order, ScheduleJob } from "../types";
-import { formatDateTime, toJakartaDateTime } from "../utils/dateFormat";
+import { addWibDays, formatDateTime, toJakartaDateTime, wibInputDate, wibInputDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
 import { parseOptimizationResponse } from "../utils/optimization";
 import type { OptimizedSchedule } from "../utils/optimization";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -28,29 +28,16 @@ interface MoveNotice {
   previousStartsAt: Record<string, string>;
 }
 
-const jakartaDate = (value: string | number | Date) => {
-  const timestamp = typeof value === "string" && !/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? `${value}Z` : value;
-  return new Date(timestamp).toLocaleDateString("en-CA", { timeZone: "Asia/Jakarta" });
-};
-
-const inputDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-const inputTime = (date: Date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+const jakartaDate = wibInputDate;
+const inputDate = wibInputDate;
+const inputTime = wibInputTime;
 export function SchedulePage() {
   const optimization = useScheduleOptimization();
   const [searchParams, setSearchParams] = useSearchParams();
   const reviewedJobId = useRef<number | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
-  const weekStart = useMemo(() => {
-    const value = new Date();
-    value.setHours(0, 0, 0, 0);
-    value.setDate(value.getDate() + weekOffset * 7);
-    return value;
-  }, [weekOffset]);
-  const weekEnd = useMemo(() => {
-    const value = new Date(weekStart);
-    value.setDate(value.getDate() + 7);
-    return value;
-  }, [weekStart]);
+  const weekStart = useMemo(() => addWibDays(wibStartOfDay(), weekOffset * 7), [weekOffset]);
+  const weekEnd = useMemo(() => addWibDays(weekStart, 7), [weekStart]);
   const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, addCorrectiveMaintenance, getScheduleJob, getMaintenanceWindow, loadOptimizationContext, applyOptimizationResponse, isLoading } = useProduction({
     machines: { page: 1, pageSize: 100 },
     maintenance: { page: 1, pageSize: 100, startAt: weekStart, endAt: weekEnd },
@@ -149,7 +136,7 @@ export function SchedulePage() {
         const deliveryAt = Date.parse(order.deliveryDate);
         if (order.deliveryDate && (!Number.isFinite(deliveryAt) || deliveryAt <= now)) return [];
         return order.items.flatMap((item) => {
-          if (!item.importedAtUtc || jakartaDate(item.importedAtUtc) !== today) return [];
+          if (!item.importedAt || jakartaDate(item.importedAt) !== today) return [];
           const itemId = Number(item.id);
           const job = context.jobs.find((row) => row.orderLineId === itemId);
           if (job && (job.isLocked || job.status !== JobStatus.Open || Date.parse(job.endAt) <= now)) return [];
@@ -309,7 +296,7 @@ export function SchedulePage() {
     });
   };
 
-  const editedStart = moveNotice ? new Date(`${moveNotice.editDate}T${moveNotice.editTime}:00`) : undefined;
+  const editedStart = moveNotice ? new Date(wibInputDateTime(moveNotice.editDate, moveNotice.editTime)) : undefined;
   const editedEnd = editedStart && moveNotice && !Number.isNaN(editedStart.getTime()) ? new Date(editedStart.getTime() + moveNotice.durationMs) : undefined;
   const invalidEdit = !editedEnd || editedEnd.getTime() <= Date.now();
 

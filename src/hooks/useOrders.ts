@@ -4,13 +4,14 @@ import type { PagedResult } from "../api/client";
 import { notify } from "../components/Notification";
 import { OrderSourceType } from "../types";
 import type { Order, OrderDraft } from "../types";
+import { toJakartaDateTime } from "../utils/dateFormat";
 
 interface ApiOrderLine {
   id: number;
   itemCode?: string;
   itemName: string;
   quantity: number;
-  importedAtUtc?: string;
+  importedAt?: string;
 }
 
 interface ApiOrder {
@@ -44,7 +45,7 @@ const sourceToApi: Record<OrderSourceType, { source: string; paymentStatus: "Pai
 };
 
 const fromApi = (order: ApiOrder): Order => {
-  const timestamp = order.orderDate ?? new Date().toISOString();
+  const timestamp = order.orderDate ?? toJakartaDateTime(Date.now());
   return {
     id: String(order.id),
     sourceType: sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid,
@@ -61,7 +62,7 @@ const fromApi = (order: ApiOrder): Order => {
       itemCode: line.itemCode,
       description: line.itemName,
       qty: line.quantity,
-      importedAtUtc: line.importedAtUtc,
+      importedAt: line.importedAt,
     })),
     createdAt: timestamp,
     updatedAt: timestamp,

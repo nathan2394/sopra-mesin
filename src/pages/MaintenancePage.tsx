@@ -8,7 +8,7 @@ import { useProduction } from "../hooks/useProduction";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MaintenanceType } from "../types";
 import type { MaintenanceWindow } from "../types";
-import { formatDate } from "../utils/dateFormat";
+import { addWibDays, formatDate, toJakartaDateTime, wibDayOfWeek, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
 import { DataTable } from "../ui/DataTable";
 import { CreatableSelect, MultiSelect, Select } from "../ui/Select";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -234,7 +234,7 @@ export function MaintenancePage() {
   const [mwAt, setMwAt] = useState("09:00");
   const [mwDuration, setMwDuration] = useState(6);
   const [mwDurationUnit, setMwDurationUnit] = useState<DurationUnit>("hours");
-  const [mwStartsOn, setMwStartsOn] = useState(new Date().toISOString().slice(0, 10));
+  const [mwStartsOn, setMwStartsOn] = useState(wibInputDate());
   const [mwType, setMwType] = useState<MaintenanceType>(MaintenanceType.Preventive);
   const [mwReason, setMwReason] = useState("");
   const [maintenanceReasons, setMaintenanceReasons] = useState<MaintenanceReason[]>([]);
@@ -280,7 +280,7 @@ export function MaintenancePage() {
     setMwAt("09:00");
     setMwDuration(6);
     setMwDurationUnit("hours");
-    setMwStartsOn(new Date().toISOString().slice(0, 10));
+    setMwStartsOn(wibInputDate());
     setMwType(MaintenanceType.Preventive);
     setMwReason("");
     setMwError(null);
@@ -306,9 +306,9 @@ export function MaintenancePage() {
     setMwScheduleType(window.scheduleType === "Recurring" ? "recurring" : "one-time");
     setMwRepeats(window.repeatType === "Weekly" ? "weekly" : "monthly");
     setMwWeekdays(window.repeatValue?.split(",").map((day) => weekdays.indexOf(day.trim())).filter((day) => day >= 0) ?? []);
-    setMwDay(Number(window.repeatValue) || start.getDate());
-    setMwAt(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
-    setMwStartsOn(`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`);
+    setMwDay(Number(window.repeatValue) || Number(wibInputDate(start).slice(8, 10)));
+    setMwAt(wibInputTime(start));
+    setMwStartsOn(wibInputDate(start));
     setMwDuration(durationHours % 24 === 0 ? durationHours / 24 : durationHours);
     setMwDurationUnit(durationHours % 24 === 0 ? "days" : "hours");
     setMwType(window.type);
@@ -323,39 +323,30 @@ export function MaintenancePage() {
       return;
     }
 
-    const [hours, minutes] = mwAt.split(":").map(Number);
-    const startsAt = new Date(`${mwStartsOn}T00:00:00`);
-    startsAt.setHours(hours, minutes, 0, 0);
+    let startsAt = new Date(wibInputDateTime(mwStartsOn, mwAt));
 
     if (mwScheduleType === "recurring" && mwRepeats === "monthly") {
-      const base = new Date(startsAt);
-      startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
-      if (startsAt < base) {
-        startsAt.setMonth(startsAt.getMonth() + 1, 1);
-        startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
-      }
+      const [year, month, day] = mwStartsOn.split("-").map(Number);
+      const monthIndex = month - 1 + (mwDay < day ? 1 : 0);
+      const targetYear = year + Math.floor(monthIndex / 12);
+      const targetMonth = monthIndex % 12;
+      const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+      const date = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(mwDay, lastDay)).padStart(2, "0")}`;
+      startsAt = new Date(wibInputDateTime(date, mwAt));
     }
 
     if (mwScheduleType === "recurring" && mwRepeats === "weekly") {
-      for (let offset = 0; offset < 7; offset += 1) {
-        const candidate = new Date(startsAt);
-        candidate.setDate(candidate.getDate() + offset);
-        if (mwWeekdays.includes(candidate.getDay())) {
-          startsAt.setTime(candidate.getTime());
-          break;
-        }
-      }
+      const currentDay = wibDayOfWeek(startsAt);
+      const offset = Math.min(...mwWeekdays.map((day) => (day - currentDay + 7) % 7));
+      startsAt = addWibDays(startsAt, offset);
     }
 
     const endsAt = new Date(startsAt.getTime() + mwDuration * (mwDurationUnit === "days" ? 86_400_000 : 3_600_000));
-    const format = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
-
     setMwError(null);
     const draft = {
       affectedScheduleId: editingMaintenance?.affectedScheduleId,
-      startAt: format(startsAt),
-      endAt: format(endsAt),
+      startAt: toJakartaDateTime(startsAt),
+      endAt: toJakartaDateTime(endsAt),
       type: mwType,
       reason: mwReason || undefined,
       scheduleType: mwScheduleType === "recurring" ? "Recurring" : "One Time",
@@ -445,7 +436,7 @@ export function MaintenancePage() {
         columns={[
           { key: "machine", header: "Machine code", cell: (window) => machineLabel(window.machineId) },
           { key: "type", header: "Type", cell: (window) => <span className={ui.badgeNeutral}>{window.type.replace(" Maintenance", "")}</span> },
-          { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${new Date(window.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}-${new Date(window.endAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` : "One time" },
+          { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${wibInputTime(window.startAt)}-${wibInputTime(window.endAt)}` : "One time" },
           { key: "next", header: "Next", cell: (window) => formatDate(window.startAt) },
           { key: "reason", header: "Reason", cell: (window) => window.reason ?? "—" },
           { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window) => <><button className={ui.btnLink} onClick={() => openEditMaintenance(window)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button></> },
