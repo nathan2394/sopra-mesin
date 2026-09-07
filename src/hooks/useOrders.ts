@@ -18,7 +18,7 @@ interface ApiOrder {
   id: number;
   source: string;
   paymentStatus?: "Paid" | "Unpaid";
-  externalId?: number;
+  externalId?: string;
   orderNumber: string;
   purchaseOrderNumber?: string;
   customerName?: string;
