@@ -180,7 +180,7 @@ export function useOrders(
   const updateOrder = useCallback(async (id: string, draft: OrderDraft) => {
     try {
       await api<ApiOrder>(`/orders/${id}`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify(toApi(draft)),
       });
       await refresh();
