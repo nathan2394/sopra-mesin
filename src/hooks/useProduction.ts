@@ -281,7 +281,7 @@ export function useProduction(options: ProductionOptions = {}) {
 
   const updateMachine = useCallback(async (id: string, draft: MachineDraft) => {
     try {
-      await api<ApiMachine>(`/machines/${id}`, { method: "PUT", body: JSON.stringify(draft) });
+      await api<ApiMachine>(`/machines/${id}`, { method: "POST", body: JSON.stringify(draft) });
       await refreshMachineData();
       notify("success", "Machine updated successfully.");
       return true;
@@ -323,7 +323,7 @@ export function useProduction(options: ProductionOptions = {}) {
   const updateMaintenanceWindow = useCallback(async (id: string, draft: MaintenanceWindowDraft) => {
     try {
       await api<ApiWindow>(`/maintenance-windows/${id}`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify({ ...draft, machineId: Number(draft.machineId), affectedScheduleId: draft.affectedScheduleId ? Number(draft.affectedScheduleId) : undefined }),
       });
       await refreshMaintenanceData();
@@ -361,7 +361,7 @@ export function useProduction(options: ProductionOptions = {}) {
     if (!current) return false;
     try {
       const updated = await api<ApiJob>(`/schedules/${id}`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify(jobBody({ ...current, ...patch })),
       });
       setScheduleJobs((rows) => rows.map((row) => row.id === id ? jobFromApi(updated) : row));
@@ -376,7 +376,7 @@ export function useProduction(options: ProductionOptions = {}) {
     if (!current) return false;
     try {
       const updated = await api<ApiJob>(`/schedules/${id}/reschedule`, {
-        method: "PATCH",
+        method: "POST",
         body: JSON.stringify({ startsAt: toJakartaDateTime(start), restoreStartsAt }),
       });
       await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
