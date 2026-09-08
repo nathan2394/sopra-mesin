@@ -74,6 +74,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
   const [startTime, setStartTime] = useState(job ? inputTime(job.startAt) : "");
   const [endDate, setEndDate] = useState(job ? inputDate(job.endAt) : "");
   const [endTime, setEndTime] = useState(job ? inputTime(job.endAt) : "");
+  const [scheduleEdited, setScheduleEdited] = useState(false);
   const isComplete = job?.status === JobStatus.ProductionComplete;
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
@@ -95,6 +96,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
     setStartTime(job ? inputTime(job.startAt) : "");
     setEndDate(job ? inputDate(job.endAt) : "");
     setEndTime(job ? inputTime(job.endAt) : "");
+    setScheduleEdited(false);
   }, [job]);
 
   return (
@@ -142,8 +144,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <p className="text-13 text-slate-400">{isMaintenance ? "Start Maintenance" : "Start Production"}</p>
               {!isMaintenance && canEditSchedule ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
@@ -154,8 +156,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <p className="text-13 text-slate-400">{isMaintenance ? "End Maintenance" : "End Production"}</p>
               {!isMaintenance && canEditSchedule ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
@@ -248,8 +250,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             {canSave && <button type="button" disabled={invalidSchedule} className={ui.btnPrimary} onClick={async () => {
               const saved = await onSave?.({
                 isLocked: locked,
-                startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined,
-                endAt: canEditSchedule ? mergeDateTime(endDate, endTime) : undefined,
+                startAt: canEditSchedule && scheduleEdited ? mergeDateTime(startDate, startTime) : undefined,
+                endAt: canEditSchedule && scheduleEdited ? mergeDateTime(endDate, endTime) : undefined,
                 correctiveMaintenance: correctiveMaintenance ? { reason, estimatedHours: Number(estimatedHours) } : undefined,
               });
               if (saved !== false) onClose();
