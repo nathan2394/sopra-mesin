@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
 import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
-import { addWibDays, formatDate, formatMonthDay, formatScheduleDateTime, wibInputDate, wibInputDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
+import { addWibDays, formatDate, formatMonthDay, formatScheduleDateTime, wibInputDate, wibStartOfDay } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
 import { ScheduleBlock } from "./ScheduleBlock";
 import * as ui from "../ui/classNames";
@@ -50,7 +50,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     new Date(window.endAt) > weekStart && new Date(window.startAt) < weekEnd &&
     (!query || [window.reason, window.type, machineById.get(window.machineId)?.lineCode].some((value) => value?.toLowerCase().includes(query)))
   );
-  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId)])]
+  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId),
+    ...machines.filter((machine) => machine.isActive && !query && (machineId === "All" || machine.id === machineId)).map((machine) => machine.id)])]
     .sort((a, b) => (machineById.get(a)?.lineCode ?? "").localeCompare(machineById.get(b)?.lineCode ?? ""));
   const toggleMachine = (groupMachineId: string) => setCollapsedMachines((current) => {
     const next = new Set(current);
@@ -132,12 +133,13 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             const machine = machineById.get(groupMachineId);
             const collapsed = collapsedMachines.has(groupMachineId);
             return (
-              <div className="contents" key={groupMachineId}>
-                <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
+              <div className="contents" key={groupMachineId} data-drop-machine-id={groupMachineId} data-drop-enabled={machine?.isActive === true}>
+                <button type="button" data-machine-heading aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
                   <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
                   <span>{machine?.lineCode ?? "Unassigned"}</span>
                   <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
                 </button>
+                {!collapsed && rows.length === 0 && <div className="col-span-5 flex min-h-14 items-center justify-end border-b border-slate-200 px-4 text-2xs text-slate-400">Drop a job here</div>}
                 {!collapsed && rows.map((row) => row.type === "job" ? (
                   <div className="contents group" key={`job-${row.job.id}`}>
                     <div className="flex min-h-14 items-center truncate border-b border-slate-200 px-2 py-2 font-semibold text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
@@ -216,9 +218,11 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
 
 function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { job: ScheduleJob; weekStart: Date; onSelect?: (job: ScheduleJob) => void; onMove?: (jobId: string, machineId: string, start: Date) => void; wrapperClassName?: string }) {
   const moved = useRef(false);
+  const cleanupDrag = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupDrag.current?.(), []);
   const start = new Date(job.startAt);
   const end = new Date(job.endAt);
-  const movable = !!onMove && (job.status === JobStatus.Open || job.status === JobStatus.ProductionPending) && !job.isLocked;
+  const movable = !!onMove && job.status === JobStatus.Open && !job.isLocked && start.getTime() > Date.now();
   const tone = ui.scheduleToneClass(job.status, false);
 
   return (
@@ -235,45 +239,88 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
       borderClassName="border-slate-200"
       onClick={(event) => {
         event.stopPropagation();
-        if (!movable) onSelect?.(job);
+        if (!movable || event.detail === 0) onSelect?.(job);
       }}
       onPointerDown={!movable ? undefined : (event) => {
+        if (event.button !== 0 || !event.isPrimary) return;
         event.preventDefault();
+        cleanupDrag.current?.();
         const element = event.currentTarget;
         const startX = event.clientX;
+        const startY = event.clientY;
+        const rect = element.getBoundingClientRect();
         const timelineWidth = element.parentElement?.clientWidth || 1;
         const startDay = wibStartOfDay(start).getTime();
+        let ghost: HTMLButtonElement | null = null;
+        let dropTarget: HTMLElement | null = null;
+        let pointerX = startX;
+        let pointerY = startY;
+        let frame = 0;
+        const updateTarget = () => {
+          dropTarget?.removeAttribute("data-drop-active");
+          dropTarget = document.elementFromPoint(pointerX, pointerY)?.closest<HTMLElement>('[data-drop-machine-id][data-drop-enabled="true"]') ?? null;
+          dropTarget?.setAttribute("data-drop-active", "true");
+        };
+        const autoScroll = () => {
+          if (moved.current) {
+            const shift = pointerY < 100 ? -12 : pointerY > window.innerHeight - 60 ? 12 : 0;
+            if (shift) { window.scrollBy(0, shift); updateTarget(); }
+          }
+          frame = requestAnimationFrame(autoScroll);
+        };
         moved.current = false;
         const pointerMove = (moveEvent: PointerEvent) => {
-          const delta = moveEvent.clientX - startX;
-          moved.current ||= Math.abs(delta) > 3;
-          element.style.transform = `translateX(${delta}px)`;
+          pointerX = moveEvent.clientX;
+          pointerY = moveEvent.clientY;
+          moved.current ||= Math.hypot(pointerX - startX, pointerY - startY) > 4;
+          if (!moved.current) return;
+          if (!ghost) {
+            ghost = element.cloneNode(true) as HTMLButtonElement;
+            ghost.removeAttribute("data-testid");
+            ghost.setAttribute("aria-hidden", "true");
+            ghost.tabIndex = -1;
+            Object.assign(ghost.style, { position: "fixed", width: `${rect.width}px`, height: `${rect.height}px`, pointerEvents: "none", zIndex: "1000", opacity: "0.85" });
+            document.body.appendChild(ghost);
+            element.style.opacity = "0.35";
+          }
+          ghost.style.left = `${rect.left + pointerX - startX}px`;
+          ghost.style.top = `${rect.top + pointerY - startY}px`;
+          updateTarget();
         };
         const pointerUp = (upEvent: PointerEvent) => {
-          window.removeEventListener("pointermove", pointerMove);
-          window.removeEventListener("pointerup", pointerUp);
-          window.removeEventListener("pointercancel", pointerCancel);
-          element.style.transform = "translateX(0)";
+          pointerX = upEvent.clientX;
+          pointerY = upEvent.clientY;
+          updateTarget();
+          const targetMachineId = dropTarget?.dataset.dropMachineId;
+          cleanupDrag.current?.();
           if (!moved.current) {
             onSelect?.(job);
             return;
           }
+          if (!targetMachineId) return;
           const currentDay = Math.floor((startDay - weekStart.getTime()) / 86400000);
           const targetDay = Math.max(0, Math.min(6, currentDay + Math.round((upEvent.clientX - startX) / (timelineWidth / 7))));
-          if (targetDay !== currentDay) {
-            const next = new Date(wibInputDateTime(wibInputDate(addWibDays(weekStart, targetDay)), wibInputTime(start)));
-            onMove?.(job.id, job.machineId, next);
+          if (targetDay !== currentDay || targetMachineId !== job.machineId) {
+            onMove?.(job.id, targetMachineId, addWibDays(start, targetDay - currentDay));
           }
         };
         const pointerCancel = () => {
           window.removeEventListener("pointermove", pointerMove);
           window.removeEventListener("pointerup", pointerUp);
           window.removeEventListener("pointercancel", pointerCancel);
-          element.style.transform = "translateX(0)";
+          window.removeEventListener("blur", pointerCancel);
+          cancelAnimationFrame(frame);
+          ghost?.remove();
+          dropTarget?.removeAttribute("data-drop-active");
+          element.style.opacity = "";
+          cleanupDrag.current = null;
         };
+        cleanupDrag.current = pointerCancel;
         window.addEventListener("pointermove", pointerMove);
         window.addEventListener("pointerup", pointerUp);
         window.addEventListener("pointercancel", pointerCancel);
+        window.addEventListener("blur", pointerCancel);
+        frame = requestAnimationFrame(autoScroll);
       }}
     />
   );

@@ -88,7 +88,7 @@ const toApi = (order: OrderDraft) => ({
 });
 
 const report = (cause: unknown) =>
-  notify("error", cause instanceof Error ? cause.message : "API request failed");
+  notify("error", cause instanceof Error ? cause.message : "The request could not be completed. Refresh and check the data before trying again.");
 
 interface OrderQuery {
   page?: number;

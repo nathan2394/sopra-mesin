@@ -46,7 +46,7 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
-  });
+  }).catch(() => { throw new Error("Cannot connect to the server. Check your connection and make sure the backend is running. If you were saving changes, refresh and check the data before trying again."); });
 
   if (response.status === 401 && token) {
     logout();
@@ -61,11 +61,15 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
   try {
     payload = text ? JSON.parse(text) as ApiResponse<T> : undefined;
   } catch {
-    if (!response.ok) throw new Error(`API request failed (${response.status}).`);
-    throw new Error("The API returned an invalid response.");
+    if (!response.ok) throw new Error(`The server could not complete the request (HTTP ${response.status}). Refresh and check the data before trying again. If this continues, contact your administrator.`);
+    throw new Error("The server returned an unreadable response. Refresh and check the data before trying again.");
   }
   if (!response.ok || !payload?.success) {
-    throw new Error(payload?.message || `API error ${response.status}`);
+    throw new Error(payload?.message || (response.status === 403
+      ? "You do not have permission to perform this action. Contact your administrator."
+      : response.status === 400 ? "Some submitted values are invalid. Check the required fields and date range, then try again."
+      : response.status === 404 ? "This record is no longer available. Refresh the page to load the latest data."
+      : "The request could not be completed. Refresh and check the data before trying again."));
   }
   return payload.data;
 }
