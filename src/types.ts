@@ -61,6 +61,7 @@ export interface MaintenanceWindow {
   id: string;
   machineId: string;
   affectedScheduleId?: string;
+  setupPercentage?: string;
   startAt: string;
   endAt: string;
   type: MaintenanceType;

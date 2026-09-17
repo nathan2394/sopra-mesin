@@ -13,9 +13,16 @@ import type {
 } from "../types";
 import { toJakartaDateTime } from "../utils/dateFormat";
 import type { OptimizedSchedule } from "../utils/optimization";
+import { normalizeMaintenanceType } from "../utils/optimization";
 
 type ApiMachine = Omit<Machine, "id"> & { id: number };
 type ApiWindow = Omit<MaintenanceWindow, "id" | "machineId" | "affectedScheduleId"> & { id: number; machineId: number; affectedScheduleId?: number };
+type OptimizationMaintenanceBody = Omit<OptimizedSchedule["maintenanceSchedules"][number], "maintenanceId" | "itemId"> & {
+  itemId?: number[];
+  orderLineId?: number;
+  replacesMaintenanceId?: number;
+  scheduleType: string;
+};
 type StoredJob = ScheduleJob & {
   reason?: string;
   purchaseOrderNumber?: string;
@@ -48,7 +55,7 @@ interface ApiJob {
 interface ProductionOptions {
   machines?: { page?: number; pageSize?: number; search?: string; type?: string; isActive?: boolean };
   machineOptions?: boolean;
-  maintenance?: { page?: number; pageSize?: number; search?: string; machineId?: string; type?: string; scheduleType?: string; startAt?: Date; endAt?: Date };
+  maintenance?: { page?: number; pageSize?: number; search?: string; machineId?: string; type?: string; scheduleType?: string; startAt?: Date; endAt?: Date; excludeSetup?: boolean };
   schedules?: { startAt?: Date; endAt?: Date };
 }
 
@@ -112,7 +119,7 @@ const jobBody = (job: StoredJob) => ({
 });
 
 const report = (cause: unknown) =>
-  notify("error", cause instanceof Error ? cause.message : "API request failed");
+  notify("error", cause instanceof Error ? cause.message : "The request could not be completed. Refresh and check the data before trying again.");
 const getAllMaintenance = async () => {
   const first = await api<PagedResult<ApiWindow>>("/maintenance-windows?page=1&pageSize=100");
   const rest = await Promise.all(Array.from({ length: first.totalPages - 1 }, (_, index) =>
@@ -135,6 +142,7 @@ export function useProduction(options: ProductionOptions = {}) {
   const maintenanceSearch = options.maintenance?.search ?? "";
   const maintenanceMachineId = options.maintenance?.machineId ?? "";
   const maintenanceType = options.maintenance?.type ?? "";
+  const excludeSetup = options.maintenance?.excludeSetup ?? false;
   const maintenanceScheduleType = options.maintenance?.scheduleType ?? "";
   const maintenanceStartAt = options.maintenance?.startAt;
   const maintenanceEndAt = options.maintenance?.endAt;
@@ -197,6 +205,7 @@ export function useProduction(options: ProductionOptions = {}) {
       if (maintenanceSearch) query.set("search", maintenanceSearch);
       if (maintenanceMachineId) query.set("machineId", maintenanceMachineId);
       if (maintenanceType) query.set("type", maintenanceType);
+      if (excludeSetup) query.set("excludeSetup", "true");
       if (maintenanceScheduleType) query.set("scheduleType", maintenanceScheduleType);
       if (maintenanceStartAt) query.set("startAt", toJakartaDateTime(maintenanceStartAt));
       if (maintenanceEndAt) query.set("endAt", toJakartaDateTime(maintenanceEndAt));
@@ -209,7 +218,7 @@ export function useProduction(options: ProductionOptions = {}) {
     } finally {
       if (!silent) setMaintenanceLoading(false);
     }
-  }, [loadMaintenance, maintenanceEndAt, maintenanceMachineId, maintenancePage, maintenancePageSize, maintenanceScheduleType, maintenanceSearch, maintenanceStartAt, maintenanceType]);
+  }, [loadMaintenance, maintenanceEndAt, maintenanceMachineId, maintenancePage, maintenancePageSize, maintenanceScheduleType, maintenanceSearch, maintenanceStartAt, maintenanceType, excludeSetup]);
 
   const refreshSchedules = useCallback(async (silent = false) => {
     if (!loadSchedules) return;
@@ -371,13 +380,13 @@ export function useProduction(options: ProductionOptions = {}) {
     } catch (cause) { report(cause); return false; }
   }, [refreshMaintenance, refreshSchedules, scheduleJobs]);
 
-  const moveJob = useCallback(async (id: string, _machineId: string, start: Date, restoreStartsAt?: Record<string, string>) => {
+  const moveJob = useCallback(async (id: string, machineId: string, start: Date, restoreStartsAt?: Record<string, string>) => {
     const current = scheduleJobs.find((job) => job.id === id);
     if (!current) return false;
     try {
       const updated = await api<ApiJob>(`/schedules/${id}/reschedule`, {
         method: "POST",
-        body: JSON.stringify({ startsAt: toJakartaDateTime(start), restoreStartsAt }),
+        body: JSON.stringify({ machineId: Number(machineId), startsAt: toJakartaDateTime(start), restoreStartsAt }),
       });
       await Promise.all([refreshSchedules(true), refreshMaintenance(true)]);
       return updated.previousStartsAt ?? {};
@@ -415,16 +424,20 @@ export function useProduction(options: ProductionOptions = {}) {
 
       const schedules = optimized.orderSchedules.flatMap((result) => {
         const entry = itemsById.get(result.itemId);
-        if (!entry) throw new Error(`Order item ${result.itemId} was not found.`);
+        if (!entry) throw new Error(`Order item #${result.itemId} is no longer available. No changes were applied. Refresh the orders and run Optimize Schedule again.`);
         const { order, item } = entry;
         const matched = allJobs.find((job) => job.order?.orderLineId === result.itemId);
-        if (matched && (matched.isLocked || matched.status !== "Open")) {
+        if (matched && protectedScheduleIds.has(matched.id)) {
           const unchanged = matched.machineId === result.machineId &&
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
             toJakartaDateTime(matched.endsAt) === toJakartaDateTime(result.endAt);
           if (!unchanged) {
             const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? `Machine ${result.machineId}`;
-            throw new Error(`Protected schedule #${matched.id} (item ${result.itemId}) cannot be changed. Current: ${matched.machineLineCode} · ${toJakartaDateTime(matched.startsAt)} → ${toJakartaDateTime(matched.endsAt)}. AI: ${aiMachine} · ${toJakartaDateTime(result.startAt)} → ${toJakartaDateTime(result.endAt)}.`);
+            const reason = Date.parse(matched.endsAt) <= now ? "its scheduled production time has already ended"
+              : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "it is paused for corrective maintenance"
+              : Date.parse(matched.startsAt) <= now ? "its scheduled production time has already started"
+              : "it is locked";
+            throw new Error(`Cannot apply this optimization. Schedule #${matched.id} on ${matched.machineLineCode} is protected because ${reason}. The AI result changes its machine or time (proposed machine: ${aiMachine}).\n\nNo changes were applied. Run Optimize Schedule again using the latest schedule. You can reopen this result from the notification to review it.`);
           }
           return [];
         }
@@ -460,13 +473,33 @@ export function useProduction(options: ProductionOptions = {}) {
       const replaceableSetupIds = new Set(allJobs.filter((job) =>
         replaceableScheduleIds.has(job.id) && job.setupMaintenanceId
       ).map((job) => job.setupMaintenanceId!));
+      const protectedSetupIds = new Set(allJobs.filter((job) =>
+        protectedScheduleIds.has(job.id) && job.setupMaintenanceId
+      ).map((job) => job.setupMaintenanceId!));
       const replacedSetup = existingMaintenance.filter((row) =>
         row.type === "Setup Maintenance" &&
+        !protectedSetupIds.has(row.id) && !protectedScheduleIds.has(row.affectedScheduleId ?? 0) &&
         (replaceableSetupIds.has(row.id) || replaceableScheduleIds.has(row.affectedScheduleId ?? 0))
       );
-      const maintenance = optimized.maintenanceSchedules.flatMap(({ maintenanceId: _, type, ...result }) => {
-        const normalizedType = `${type.charAt(0).toUpperCase()}${type.slice(1).toLowerCase()} Maintenance`;
-        const itemIds = result.itemId ?? [];
+      const maintenance = optimized.maintenanceSchedules.flatMap<OptimizationMaintenanceBody>(({ maintenanceId, type, itemId, ...result }) => {
+        const normalizedType = normalizeMaintenanceType(type);
+        const itemIds = Array.isArray(itemId) ? itemId : itemId === undefined ? [] : [itemId];
+        if (normalizedType === "Corrective Maintenance") {
+          if (itemIds.length !== 1) throw new Error("The AI result links corrective maintenance to an invalid number of order items. Exactly one is required. No changes were applied. Run Optimize Schedule again.");
+          const linkedJob = allJobs.find((job) => job.order?.orderLineId === itemIds[0]);
+          const previous = linkedJob ? existingMaintenance.find((row) => row.type === "Corrective Maintenance" &&
+            row.affectedScheduleId === linkedJob.id && Date.parse(row.endAt) > now) : undefined;
+          if (maintenanceId !== undefined && previous?.id !== maintenanceId)
+            throw new Error("The corrective maintenance link has changed. Review the latest schedule before applying.");
+          return [{
+            ...result,
+            orderLineId: itemIds[0],
+            replacesMaintenanceId: previous?.id,
+            type: normalizedType,
+            reason: result.reason || previous?.reason || "AI schedule optimization",
+            scheduleType: "One Time",
+          }];
+        }
         const protectedJobs = itemIds.flatMap((itemId) => {
           const job = protectedJobsByItemId.get(itemId);
           return job ? [job] : [];
@@ -477,11 +510,11 @@ export function useProduction(options: ProductionOptions = {}) {
             (setupIds.has(row.id) || protectedJobs.some((job) => row.affectedScheduleId === job.id)));
           const entireGroupIsProtected = protectedJobs.length === itemIds.length;
           if (!currentSetup || !entireGroupIsProtected || setupIds.size > 1)
-            throw new Error("AI attempted to regroup a protected schedule.");
+            throw new Error("This optimization changes a setup group that contains protected production. No changes were applied. Run Optimize Schedule again using the latest schedule.");
           const unchanged = currentSetup.machineId === result.machineId &&
             toJakartaDateTime(currentSetup.startAt) === toJakartaDateTime(result.startAt) &&
             toJakartaDateTime(currentSetup.endAt) === toJakartaDateTime(result.endAt);
-          if (!unchanged) throw new Error(`AI attempted to change Setup for protected schedule #${protectedJobs[0].id} on ${protectedJobs[0].machineLineCode}.`);
+          if (!unchanged) throw new Error(`This optimization moves the setup for protected schedule #${protectedJobs[0].id} on ${protectedJobs[0].machineLineCode}. No changes were applied. Run Optimize Schedule again using the latest schedule.`);
           return [];
         }
         const exists = normalizedType !== "Setup Maintenance" && existingMaintenance.some((row) =>
@@ -489,8 +522,9 @@ export function useProduction(options: ProductionOptions = {}) {
         );
         return exists ? [] : [{
           ...result,
+          itemId: itemIds.length ? itemIds : undefined,
           type: normalizedType,
-          reason: "AI schedule optimization",
+          reason: result.reason || "AI schedule optimization",
           scheduleType: "One Time",
         }];
       });

@@ -135,6 +135,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <div><p className="text-13 text-slate-400">Machine code</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine?.lineCode ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Schedule</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Frequency</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType === "Recurring" ? [maintenance.repeatType, maintenance.repeatValue].filter(Boolean).join(" · ") : "One Time"}</p></div>
+              {maintenance?.type === MaintenanceType.Setup && maintenance.setupPercentage && <div><p className="text-13 text-slate-400">Setup percentage</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance.setupPercentage}</p></div>}
               <div className="col-span-2"><p className="text-13 text-slate-400">Reason</p><p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p></div>
             </div>
           )}
@@ -169,7 +170,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
           {!isMaintenance && (
             <div className="rounded-lg bg-slate-50 p-4">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                <span className="text-sm font-semibold text-slate-900">Setup</span>
+                <span className="text-sm font-semibold text-slate-900">Setup{setupMaintenance?.setupPercentage ? ` · ${setupMaintenance.setupPercentage}` : ""}</span>
                 {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
               </div>
               {setupMaintenance ? (

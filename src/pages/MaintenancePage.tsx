@@ -215,6 +215,7 @@ export function MaintenancePage() {
   } = useProduction({
     machineOptions: true,
     maintenance: {
+      excludeSetup: true,
       page: maintenancePage,
       pageSize: 15,
       search: maintenanceSearchQuery,
@@ -345,6 +346,7 @@ export function MaintenancePage() {
     setMwError(null);
     const draft = {
       affectedScheduleId: editingMaintenance?.affectedScheduleId,
+      setupPercentage: mwType === MaintenanceType.Setup ? editingMaintenance?.setupPercentage : undefined,
       startAt: toJakartaDateTime(startsAt),
       endAt: toJakartaDateTime(endsAt),
       type: mwType,
@@ -366,7 +368,7 @@ export function MaintenancePage() {
       <PageHeader
         breadcrumb={[]}
         title="Maintenance"
-        subtitle="Manage setup, preventive, and corrective maintenance for each machine."
+        subtitle="Manage preventive, corrective, and trial maintenance for each machine."
         actions={
           <>
             <input ref={importInput} className="hidden" type="file" accept=".xlsx" onChange={async (event) => {
@@ -379,10 +381,10 @@ export function MaintenancePage() {
                 await refreshMaintenance();
                 notify(
                   result.errors.length ? "warning" : "success",
-                  result.errors.length ? `${result.imported} imported. ${result.errors.join(" ")}` : `${result.imported} imported successfully.`,
+                  result.errors.length ? `${result.imported} maintenance schedules imported; ${result.errors.length} rows could not be imported. Correct and retry only the failed rows to avoid duplicates.\n\n${result.errors.join("\n")}` : `${result.imported} maintenance schedules imported successfully.`,
                 );
               } catch (cause) {
-                notify("error", cause instanceof Error ? cause.message : "Import failed");
+                notify("error", cause instanceof Error ? cause.message : "The import could not be completed. Check the Excel template and refresh the list before retrying; some rows may already have been imported.");
               }
               event.target.value = "";
             }} />

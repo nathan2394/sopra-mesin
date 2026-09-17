@@ -114,7 +114,7 @@ export function OrdersPage() {
       <OrderTable
         orders={orders}
         onEdit={(order) => { setEditing(order); setFormOpen(true); }}
-        onDelete={(order) => { if (window.confirm(`Delete order ${order.orderNo}?`)) void removeOrder(order.id); }}
+        onDelete={(order) => { if (window.confirm(`Delete order ${order.orderNo}? This cannot be undone. Cancel to keep the order.`)) void removeOrder(order.id); }}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}

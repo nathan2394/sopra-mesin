@@ -19,6 +19,7 @@ import * as ui from "../ui/classNames";
 interface MoveNotice {
   jobId: string;
   machineId: string;
+  previousMachineId: string;
   previousStart: Date;
   startAt: Date;
   durationMs: number;
@@ -48,6 +49,7 @@ export function SchedulePage() {
   const [linkedMaintenanceJob, setLinkedMaintenanceJob] = useState<{ maintenanceId: string; job: ScheduleJob } | null>(null);
   const [linkedSetupMaintenance, setLinkedSetupMaintenance] = useState<MaintenanceWindow | null>(null);
   const [moveNotice, setMoveNotice] = useState<MoveNotice | null>(null);
+  const [movingJob, setMovingJob] = useState(false);
   const [applyingOptimization, setApplyingOptimization] = useState(false);
   const [submittingOptimization, setSubmittingOptimization] = useState(false);
   const [optimizationStage, setOptimizationStage] = useState<"apply" | null>(null);
@@ -59,10 +61,10 @@ export function SchedulePage() {
   } | null>(null);
 
   useEffect(() => {
-    if (!moveNotice || moveNotice.editing) return;
+    if (!moveNotice || moveNotice.editing || movingJob) return;
     const timer = window.setTimeout(() => setMoveNotice(null), 4_000);
     return () => window.clearTimeout(timer);
-  }, [moveNotice]);
+  }, [moveNotice, movingJob]);
 
   const selectedJob = scheduleJobs.find((job) => job.id === selectedJobId) ?? null;
   const selectedMaintenance = maintenanceWindows.find((window) => window.id === selectedMaintenanceId) ?? null;
@@ -157,7 +159,7 @@ export function SchedulePage() {
           }];
         });
       });
-      if (optimizable.length === 0) throw new Error("No order items were imported today.");
+      if (optimizable.length === 0) throw new Error("No eligible order items are available for optimization today. Check the import date, delivery date, and schedule status. Locked or started schedules are currently excluded.");
       const payload = {
       machines: activeMachines.map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
       machineHistory: activeMachines.map((machine) => ({
@@ -200,6 +202,9 @@ export function SchedulePage() {
       ).map((window) => ({
         maintenanceId: window.id,
         machineId: window.machineId,
+        ...(window.type === MaintenanceType.Corrective ? {
+          itemId: context.jobs.find((job) => job.id === window.affectedScheduleId)?.orderLineId ?? null,
+        } : {}),
         startAt: toJakartaDateTime(window.startAt),
         endAt: toJakartaDateTime(window.endAt),
         status: "Routine Maintenance",
@@ -225,12 +230,17 @@ export function SchedulePage() {
 
   const optimizationJobId = Number(searchParams.get("optimizationJob"));
   useEffect(() => {
+    if (!optimizationJobId) { reviewedJobId.current = null; return; }
     if (!Number.isInteger(optimizationJobId) || optimizationJobId <= 0 || reviewedJobId.current === optimizationJobId) return;
     reviewedJobId.current = optimizationJobId;
+    const next = new URLSearchParams(searchParams);
+    next.delete("optimizationJob");
+    setSearchParams(next, { replace: true });
     void (async () => {
       try {
         const [detail, orders, context] = await Promise.all([optimization.get(optimizationJobId), loadOrders(), loadOptimizationContext()]);
-        if (!detail.response) throw new Error(detail.job.errorMessage ?? "Optimization result is not ready.");
+        if (detail.job.status === "Applied") throw new Error("This optimization has already been applied. Refresh the schedule to see the saved changes.");
+        if (!detail.response) throw new Error(detail.job.errorMessage ?? "The optimization result is not ready yet. Wait for the ready notification, then open the review again.");
         const candidate = parseOptimizationResponse(detail.response)[0];
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
         const activeCorrectiveScheduleIds = new Set(context.maintenance
@@ -246,10 +256,7 @@ export function SchedulePage() {
           deleteCount,
           candidate,
         });
-        const next = new URLSearchParams(searchParams);
-        next.delete("optimizationJob");
-        setSearchParams(next, { replace: true });
-        await optimization.refresh();
+        await optimization.refresh().catch(() => undefined);
       } catch (cause) {
         reviewedJobId.current = null;
         notify("error", cause instanceof Error ? cause.message : "Optimization result could not be opened.");
@@ -258,14 +265,16 @@ export function SchedulePage() {
   }, [optimization, optimizationJobId, searchParams, setSearchParams]);
 
   const confirmOptimization = async () => {
-    if (!optimizationConfirmation) return;
+    if (!optimizationConfirmation || applyingOptimization) return;
     const confirmation = optimizationConfirmation;
     setOptimizationConfirmation(null);
     setApplyingOptimization(true);
     setOptimizationStage("apply");
     try {
-      if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate))
-        await optimization.markApplied(confirmation.jobId);
+      if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate)) {
+        try { await optimization.markApplied(confirmation.jobId); }
+        catch { notify("warning", "The schedule was saved, but the optimization status could not be updated. Refresh and check the saved schedule before applying this result again."); }
+      }
     } finally {
       setApplyingOptimization(false);
       setOptimizationStage(null);
@@ -274,18 +283,20 @@ export function SchedulePage() {
 
   const handleJobMoved = async (jobId: string, machineId: string, droppedStart: Date) => {
     const job = scheduleJobs.find((row) => row.id === jobId);
-    if (!job) return;
+    if (!job || movingJob) return;
     const durationMs = new Date(job.endAt).getTime() - new Date(job.startAt).getTime();
     let startAt = droppedStart;
-    if (startAt.getTime() + durationMs <= Date.now()) {
+    if (startAt.getTime() <= Date.now()) {
       const halfHour = 30 * 60_000;
       startAt = new Date(Math.ceil((Date.now() + halfHour) / halfHour) * halfHour);
     }
-    const previousStartsAt = await moveJob(jobId, machineId, startAt);
+    setMovingJob(true);
+    const previousStartsAt = await moveJob(jobId, machineId, startAt).finally(() => setMovingJob(false));
     if (!previousStartsAt) return;
     setMoveNotice({
       jobId,
       machineId,
+      previousMachineId: job.machineId,
       previousStart: new Date(job.startAt),
       startAt,
       durationMs,
@@ -298,7 +309,7 @@ export function SchedulePage() {
 
   const editedStart = moveNotice ? new Date(wibInputDateTime(moveNotice.editDate, moveNotice.editTime)) : undefined;
   const editedEnd = editedStart && moveNotice && !Number.isNaN(editedStart.getTime()) ? new Date(editedStart.getTime() + moveNotice.durationMs) : undefined;
-  const invalidEdit = !editedEnd || editedEnd.getTime() <= Date.now();
+  const invalidEdit = !editedStart || !editedEnd || editedStart.getTime() <= Date.now();
 
   return (
     <div className={ui.page}>
@@ -326,7 +337,7 @@ export function SchedulePage() {
             <div className="notification-content">
               <div className="notification-copy">
                 <h2 id="optimization-confirm-title" className="text-xl font-bold tracking-tight text-slate-900">Apply optimized schedule?</h2>
-                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">Apply {optimizationConfirmation.candidate.orderSchedules.length} item schedules, remove {optimizationConfirmation.deleteCount} omitted schedules, and apply {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance windows.</p>
+                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">This AI result contains {optimizationConfirmation.candidate.orderSchedules.length} production schedules and {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance entries. Applying it will replace eligible schedules and remove {optimizationConfirmation.deleteCount} eligible schedules not included in the result. Protected schedules must stay unchanged. Cancel to keep the current schedule.</p>
               </div>
               <div className="flex justify-center gap-2">
                 <button type="button" className={`${ui.btnSecondary} min-w-24 justify-center px-5 py-2.5 text-sm`} onClick={() => setOptimizationConfirmation(null)}>Cancel</button>
@@ -354,7 +365,7 @@ export function SchedulePage() {
         isLoading={isLoading}
         onSelectJob={(job) => { setSelectedMaintenanceId(null); setSelectedJobId(job.id); }}
         onSelectMaintenance={(window) => { setSelectedJobId(null); setSelectedMaintenanceId(window.id); }}
-        onJobMoved={handleJobMoved}
+        onJobMoved={movingJob ? undefined : handleJobMoved}
       />
 
       {(selectedJob || selectedMaintenance) && (
@@ -389,6 +400,7 @@ export function SchedulePage() {
             <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Check size={16} strokeWidth={2.4} /></span>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-slate-900">Schedule updated</p>
+              <p className="mt-0.5 text-xs font-semibold text-slate-600">{machines.find((machine) => machine.id === moveNotice.machineId)?.lineCode}</p>
               <p className="mt-0.5 truncate text-xs tabular-nums text-slate-500">{formatDateTime(moveNotice.startAt)} → {inputTime(new Date(moveNotice.startAt.getTime() + moveNotice.durationMs))} WIB</p>
             </div>
             <button type="button" aria-label="Close notification" onClick={() => setMoveNotice(null)} className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600"><X size={15} /></button>
@@ -397,17 +409,19 @@ export function SchedulePage() {
             <div className="mt-3 grid grid-cols-2 gap-2 pl-11">
               <input aria-label="New start date" type="date" value={moveNotice.editDate} onChange={(event) => setMoveNotice({ ...moveNotice, editDate: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
               <input aria-label="New start time" type="time" value={moveNotice.editTime} onChange={(event) => setMoveNotice({ ...moveNotice, editTime: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
-              {invalidEdit && <p role="alert" className="col-span-2 text-xs text-red-600">Production must end after the current time.</p>}
+              {invalidEdit && <p role="alert" className="col-span-2 text-xs text-red-600">Production must start after the current time.</p>}
             </div>
           )}
           <div className="mt-2.5 flex gap-3 pl-11">
-            <button type="button" className="text-xs font-semibold text-slate-500 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
-              if (await moveJob(moveNotice.jobId, moveNotice.machineId, moveNotice.previousStart, moveNotice.previousStartsAt)) setMoveNotice(null);
+            <button type="button" disabled={movingJob} className="text-xs font-semibold text-slate-500 transition hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
+              setMovingJob(true);
+              if (await moveJob(moveNotice.jobId, moveNotice.previousMachineId, moveNotice.previousStart, moveNotice.previousStartsAt).finally(() => setMovingJob(false))) setMoveNotice(null);
             }}>Undo</button>
             {moveNotice.editing ? (
-              <button type="button" disabled={invalidEdit} className="text-xs font-semibold text-brand-600 transition hover:text-brand-700 disabled:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
+              <button type="button" disabled={invalidEdit || movingJob} className="text-xs font-semibold text-brand-600 transition hover:text-brand-700 disabled:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" onClick={async () => {
                 if (!editedStart) return;
-                const previousStartsAt = await moveJob(moveNotice.jobId, moveNotice.machineId, editedStart);
+                setMovingJob(true);
+                const previousStartsAt = await moveJob(moveNotice.jobId, moveNotice.machineId, editedStart).finally(() => setMovingJob(false));
                 if (!previousStartsAt) return;
                 setMoveNotice({ ...moveNotice, startAt: editedStart, editing: false,
                   previousStartsAt: { ...previousStartsAt, ...moveNotice.previousStartsAt } });
