@@ -239,6 +239,10 @@ export function SchedulePage() {
     void (async () => {
       try {
         const [detail, orders, context] = await Promise.all([optimization.get(optimizationJobId), loadOrders(), loadOptimizationContext()]);
+        if (detail.job.status === "Expired") {
+          await optimization.refresh();
+          throw new Error("This optimization has expired and is no longer available to apply. Run Optimize Schedule again using the latest schedule.");
+        }
         if (detail.job.status === "Applied") throw new Error("This optimization has already been applied. Refresh the schedule to see the saved changes.");
         if (!detail.response) throw new Error(detail.job.errorMessage ?? "The optimization result is not ready yet. Wait for the ready notification, then open the review again.");
         const candidate = parseOptimizationResponse(detail.response)[0];
