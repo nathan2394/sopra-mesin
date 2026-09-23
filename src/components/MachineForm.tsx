@@ -37,7 +37,7 @@ export function MachineForm({ initial, onSave, onCancel }: Props) {
 
   const handleSave = () => {
     if (!draft.lineCode.trim() || !draft.name.trim() || !draft.machineType.trim()) {
-      setError("Machine code, name, and type are required.");
+      setError("Isi kode, nama, dan jenis mesin sebelum menyimpan.");
       return;
     }
     setError(null);

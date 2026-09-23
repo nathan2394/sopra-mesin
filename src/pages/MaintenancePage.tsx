@@ -320,7 +320,7 @@ export function MaintenancePage() {
 
   const handleSaveWindow = async () => {
     if (mwMachineIds.length === 0 || !mwStartsOn || mwDuration < 1 || (mwScheduleType === "recurring" && ((mwRepeats === "monthly" && (mwDay < 1 || mwDay > 28)) || (mwRepeats === "weekly" && mwWeekdays.length === 0)))) {
-      setMwError(mwMachineIds.length === 0 ? "Select at least one machine." : "Complete the schedule with a day from 1 to 28.");
+      setMwError(mwMachineIds.length === 0 ? "Pilih minimal satu mesin." : "Lengkapi jadwal dan pilih tanggal bulanan antara 1 sampai 28.");
       return;
     }
 
@@ -381,10 +381,10 @@ export function MaintenancePage() {
                 await refreshMaintenance();
                 notify(
                   result.errors.length ? "warning" : "success",
-                  result.errors.length ? `${result.imported} maintenance schedules imported; ${result.errors.length} rows could not be imported. Correct and retry only the failed rows to avoid duplicates.\n\n${result.errors.join("\n")}` : `${result.imported} maintenance schedules imported successfully.`,
+                  result.errors.length ? `Sebagian baris belum berhasil diimport\n\n${result.imported} jadwal tersimpan; ${result.errors.length} baris gagal.\n\n${result.errors.join("\n")}\n\nPerbaiki dan import ulang hanya baris yang gagal agar tidak terduplikasi.` : `${result.imported} maintenance schedules imported successfully.`,
                 );
               } catch (cause) {
-                notify("error", cause instanceof Error ? cause.message : "The import could not be completed. Check the Excel template and refresh the list before retrying; some rows may already have been imported.");
+                notify("error", cause instanceof Error ? cause.message : "Import belum selesai\n\nPeriksa template Excel dan muat ulang daftar. Sebagian baris mungkin sudah tersimpan; ulangi hanya baris yang gagal.");
               }
               event.target.value = "";
             }} />

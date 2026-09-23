@@ -30,15 +30,15 @@ export function normalizeMaintenanceType(type: string): string {
 
 export function parseOptimizationResponse(value: unknown): OptimizedSchedule[] {
   const candidates = Array.isArray(value) ? value : [value];
-  if (candidates.length === 0) throw new Error("The AI returned no schedule to review. Run Optimize Schedule again.");
+  if (candidates.length === 0) throw new Error("Hasil optimasi kosong\n\nJalankan Optimize Schedule kembali.");
 
   for (const candidate of candidates) {
-    if (!candidate || typeof candidate !== "object") throw new Error("The AI returned an unreadable schedule result. Run Optimize Schedule again.");
+    if (!candidate || typeof candidate !== "object") throw new Error("Hasil optimasi tidak dapat dibaca\n\nJalankan Optimize Schedule kembali.");
     const { orderSchedules, maintenanceSchedules } = candidate as Partial<OptimizedSchedule>;
-    if (!Array.isArray(orderSchedules) || !Array.isArray(maintenanceSchedules)) throw new Error("The AI result is missing production or maintenance data. Run Optimize Schedule again.");
-    if (!orderSchedules.length && !maintenanceSchedules.length) throw new Error("The AI result contains no production or maintenance entries. Run Optimize Schedule again.");
+    if (!Array.isArray(orderSchedules) || !Array.isArray(maintenanceSchedules)) throw new Error("Hasil optimasi tidak lengkap\n\nData produksi atau maintenance belum tersedia. Jalankan Optimize Schedule kembali.");
+    if (!orderSchedules.length && !maintenanceSchedules.length) throw new Error("Hasil optimasi kosong\n\nTidak ada jadwal produksi atau maintenance. Jalankan Optimize Schedule kembali.");
     if (!orderSchedules.every((row) => isId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
-      throw new Error("The AI result contains incomplete or invalid production details. Run Optimize Schedule again.");
+      throw new Error("Data produksi hasil optimasi tidak sesuai\n\nJalankan Optimize Schedule kembali.");
     }
     if (!maintenanceSchedules.every((row) => {
       if (typeof row?.type !== "string") return false;
@@ -54,10 +54,10 @@ export function parseOptimizationResponse(value: unknown): OptimizedSchedule[] {
         (row.reason === undefined || typeof row.reason === "string") &&
         isDate(row.startAt) && isDate(row.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt);
     })) {
-      throw new Error("The AI result contains invalid maintenance details, order links, or setup percentages. Run Optimize Schedule again.");
+      throw new Error("Data maintenance hasil optimasi tidak sesuai\n\nDetail maintenance, hubungan order, atau persentase setup tidak valid. Jalankan Optimize Schedule kembali.");
     }
     if (new Set(orderSchedules.map((row) => row.itemId)).size !== orderSchedules.length) {
-      throw new Error("The AI result schedules an order item more than once. Run Optimize Schedule again to get a valid result.");
+      throw new Error("Order terjadwal lebih dari sekali\n\nHasil optimasi berisi jadwal duplikat. Jalankan Optimize Schedule kembali.");
     }
   }
 

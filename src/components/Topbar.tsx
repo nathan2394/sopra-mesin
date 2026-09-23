@@ -25,7 +25,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
     : job?.status === "Ready"
       ? { title: "Schedule is ready", copy: "Review the AI result before applying it.", Icon: CheckCircle2, color: "text-emerald-600", spin: false }
       : job?.status === "Failed"
-        ? { title: "Optimization failed", copy: job.errorMessage ?? "The AI service could not finish the request.", Icon: XCircle, color: "text-red-600", spin: false }
+        ? { title: "Optimasi gagal", copy: job.errorMessage ?? "Layanan AI belum dapat menyelesaikan optimasi. Coba lagi.", Icon: XCircle, color: "text-red-600", spin: false }
         : optimization.busy
           ? { title: "Optimization in progress", copy: "Another planner is currently optimizing the schedule.", Icon: LoaderCircle, color: "text-brand-600", spin: true }
           : { title: "No active optimization", copy: "New optimization updates will appear here.", Icon: Clock3, color: "text-slate-400", spin: false };

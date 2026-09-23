@@ -46,30 +46,34 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init.headers,
     },
-  }).catch(() => { throw new Error("Cannot connect to the server. Check your connection and make sure the backend is running. If you were saving changes, refresh and check the data before trying again."); });
+  }).catch(() => { throw new Error("Koneksi ke server terputus\n\nPeriksa koneksi internet. Jika sedang menyimpan, muat ulang dan periksa data sebelum mencoba lagi."); });
 
   if (response.status === 401 && token) {
     logout();
-    queueWarning("Your session has expired. Please sign in again.");
+    queueWarning("Sesi login berakhir\n\nSilakan login kembali.");
     window.location.reload();
-    throw new Error("Your session has expired. Please sign in again.");
+    throw new Error("Sesi login berakhir\n\nSilakan login kembali.");
   }
   if (response.status === 204) return undefined as T;
+  if (response.status === 401) throw new Error("Login diperlukan\n\nSilakan login untuk melanjutkan.");
+  if (response.status === 403) throw new Error("Akses tidak diizinkan\n\nHubungi administrator untuk memeriksa hak akses akun.");
+  if (response.status === 413) throw new Error("File terlalu besar\n\nKurangi ukuran file sebelum mengunggah kembali.");
+  if (response.status === 429) throw new Error("Terlalu banyak permintaan\n\nTunggu sebentar sebelum mencoba lagi.");
 
   const text = await response.text();
   let payload: ApiResponse<T> | undefined;
   try {
     payload = text ? JSON.parse(text) as ApiResponse<T> : undefined;
   } catch {
-    if (!response.ok) throw new Error(`The server could not complete the request (HTTP ${response.status}). Refresh and check the data before trying again. If this continues, contact your administrator.`);
-    throw new Error("The server returned an unreadable response. Refresh and check the data before trying again.");
+    if (!response.ok) throw new Error("Permintaan belum dapat diproses\n\nServer tidak memberikan respons yang sesuai. Muat ulang dan periksa data sebelum mencoba lagi; hubungi administrator jika masalah berulang.");
+    throw new Error("Respons server tidak dapat dibaca\n\nMuat ulang dan periksa data sebelum mencoba lagi.");
   }
   if (!response.ok || !payload?.success) {
     throw new Error(payload?.message || (response.status === 403
-      ? "You do not have permission to perform this action. Contact your administrator."
-      : response.status === 400 ? "Some submitted values are invalid. Check the required fields and date range, then try again."
-      : response.status === 404 ? "This record is no longer available. Refresh the page to load the latest data."
-      : "The request could not be completed. Refresh and check the data before trying again."));
+      ? "Akses tidak diizinkan\n\nHubungi administrator untuk memeriksa hak akses akun."
+      : response.status === 400 ? "Data belum sesuai\n\nPeriksa isian wajib, angka, serta tanggal sebelum mencoba lagi."
+      : response.status === 404 ? "Data tidak ditemukan\n\nMuat ulang halaman untuk melihat data terbaru."
+      : "Permintaan belum dapat diproses\n\nMuat ulang dan periksa data sebelum mencoba lagi."));
   }
   return payload.data;
 }

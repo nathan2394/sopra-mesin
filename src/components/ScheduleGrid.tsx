@@ -50,8 +50,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     new Date(window.endAt) > weekStart && new Date(window.startAt) < weekEnd &&
     (!query || [window.reason, window.type, machineById.get(window.machineId)?.lineCode].some((value) => value?.toLowerCase().includes(query)))
   );
-  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId),
-    ...machines.filter((machine) => machine.isActive && !query && (machineId === "All" || machine.id === machineId)).map((machine) => machine.id)])]
+  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId)])]
     .sort((a, b) => (machineById.get(a)?.lineCode ?? "").localeCompare(machineById.get(b)?.lineCode ?? ""));
   const toggleMachine = (groupMachineId: string) => setCollapsedMachines((current) => {
     const next = new Set(current);
@@ -139,7 +138,6 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                   <span>{machine?.lineCode ?? "Unassigned"}</span>
                   <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
                 </button>
-                {!collapsed && rows.length === 0 && <div className="col-span-5 flex min-h-14 items-center justify-end border-b border-slate-200 px-4 text-2xs text-slate-400">Drop a job here</div>}
                 {!collapsed && rows.map((row) => row.type === "job" ? (
                   <div className="contents group" key={`job-${row.job.id}`}>
                     <div className="flex min-h-14 items-center truncate border-b border-slate-200 px-2 py-2 font-semibold text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
@@ -239,10 +237,13 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
       borderClassName="border-slate-200"
       onClick={(event) => {
         event.stopPropagation();
+        if (moved.current && event.detail !== 0) return;
         if (!movable || event.detail === 0) onSelect?.(job);
       }}
-      onPointerDown={!movable ? undefined : (event) => {
+      onPointerDown={(event) => {
         if (event.button !== 0 || !event.isPrimary) return;
+        moved.current = false;
+        if (!movable) return;
         event.preventDefault();
         cleanupDrag.current?.();
         const element = event.currentTarget;
@@ -268,7 +269,6 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
           }
           frame = requestAnimationFrame(autoScroll);
         };
-        moved.current = false;
         const pointerMove = (moveEvent: PointerEvent) => {
           pointerX = moveEvent.clientX;
           pointerY = moveEvent.clientY;
