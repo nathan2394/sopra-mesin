@@ -45,13 +45,13 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
           window.google.accounts.id.initialize({
             client_id: clientId,
             callback: async ({ credential }) => {
-              if (!credential) return notify("warning", "Google credential tidak tersedia");
+              if (!credential) return notify("warning", "Google did not return a sign-in credential. Close the sign-in window and try again.");
               setSubmitting(true);
               try {
                 await loginWithGoogle(credential);
                 onAuthenticated();
               } catch (cause) {
-                notify("error", cause instanceof Error ? cause.message : "Google login gagal");
+                notify("error", cause instanceof Error ? cause.message : "Google sign-in could not be completed. Try again or sign in with your username and password.");
               } finally {
                 setSubmitting(false);
               }
@@ -83,7 +83,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
         observer = new ResizeObserver(render);
         if (googleButtonRef.current) observer.observe(googleButtonRef.current);
       } catch (cause) {
-        if (active) notify("error", cause instanceof Error ? cause.message : "Google login tidak tersedia");
+        if (active) notify("error", cause instanceof Error ? cause.message : "Google sign-in is unavailable. Use your username and password or contact your administrator.");
       }
     };
 
@@ -101,7 +101,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
       await login(username, password);
       onAuthenticated();
     } catch (cause) {
-      notify("error", cause instanceof Error ? cause.message : "Authentication failed");
+      notify("error", cause instanceof Error ? cause.message : "Sign-in failed. Check your username and password, then try again.");
     } finally {
       setSubmitting(false);
     }

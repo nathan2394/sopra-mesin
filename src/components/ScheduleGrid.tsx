@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
-import { JobStatus, MaintenanceType } from "../types";
+import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
-import { formatMonthDay, formatScheduleDateTime } from "../utils/dateFormat";
+import { addWibDays, formatDate, formatMonthDay, formatScheduleDateTime, wibInputDate, wibStartOfDay } from "../utils/dateFormat";
 import { Select } from "../ui/Select";
 import { ScheduleBlock } from "./ScheduleBlock";
 import * as ui from "../ui/classNames";
@@ -38,11 +38,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     return () => observer.disconnect();
   }, []);
   const machineById = useMemo(() => new Map(machines.map((machine) => [machine.id, machine])), [machines]);
-  const days = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(weekStart);
-    date.setDate(date.getDate() + index);
-    return date;
-  });
+  const days = Array.from({ length: 7 }, (_, index) => addWibDays(weekStart, index));
   const query = search.trim().toLowerCase();
   const visibleJobs = jobs.filter((job) =>
     (machineId === "All" || job.machineId === machineId) &&
@@ -54,7 +50,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     new Date(window.endAt) > weekStart && new Date(window.startAt) < weekEnd &&
     (!query || [window.reason, window.type, machineById.get(window.machineId)?.lineCode].some((value) => value?.toLowerCase().includes(query)))
   );
-  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId)])]
+  const groups = [...new Set([...visibleJobs.map((job) => job.machineId), ...visibleMaintenance.map((window) => window.machineId),
+    ...machines.filter((machine) => machine.isActive && !query && (machineId === "All" || machine.id === machineId)).map((machine) => machine.id)])]
     .sort((a, b) => (machineById.get(a)?.lineCode ?? "").localeCompare(machineById.get(b)?.lineCode ?? ""));
   const toggleMachine = (groupMachineId: string) => setCollapsedMachines((current) => {
     const next = new Set(current);
@@ -83,13 +80,13 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
   return (
     <section className="overflow-visible rounded-xl border border-slate-200 bg-white">
       <div ref={stickySentinelRef} aria-hidden="true" />
-      <div className={ui.cx("sticky top-13.25 z-20 rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
+      <div className={ui.cx("sticky top-13.25 z-[5] rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
         <div className="grid grid-cols-1 gap-3 rounded-t-xl border-b border-slate-200 p-4 lg:grid-cols-[220px_150px_1fr] lg:items-end">
           <div className="text-2xs font-medium text-slate-500">
             <div>Week</div>
             <div className="mt-1 grid h-9 grid-cols-[32px_minmax(0,1fr)_32px] items-stretch overflow-hidden rounded-md border border-slate-200 bg-white">
               <button type="button" className="grid h-full place-items-center border-r border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value - 1)} aria-label="Previous week"><ChevronLeft size={14} /></button>
-              <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 text-2xs font-semibold text-slate-700"><CalendarDays size={13} /><span className="truncate">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span></div>
+              <div className="flex min-w-0 items-center justify-center gap-1.5 px-2 text-2xs font-semibold text-slate-700"><CalendarDays size={13} /><span className="truncate">{formatMonthDay(weekStart)} - {formatDate(weekEnd.getTime() - 1)}</span></div>
               <button type="button" className="grid h-full place-items-center border-l border-slate-200 text-slate-500 hover:bg-slate-50" onClick={() => onWeekOffsetChange((value) => value + 1)} aria-label="Next week"><ChevronRight size={14} /></button>
             </div>
           </div>
@@ -115,8 +112,8 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2!")}>Delivery Due</div>
             <div className={ui.cx(ui.th, "flex items-center whitespace-nowrap px-2! pl-3!")}>Production Window</div>
             <div className="border-b border-l border-slate-200 bg-slate-50">
-              <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })} - {new Date(weekEnd.getTime() - 1).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
-              <div className="grid grid-cols-7">{days.map((date) => <span key={date.toISOString()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{String(date.getDate()).padStart(2, "0")}</span>)}</div>
+              <div className="border-b border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500">{formatDate(weekStart)} - {formatDate(weekEnd.getTime() - 1)}</div>
+              <div className="grid grid-cols-7">{days.map((date) => <span key={date.getTime()} className="border-r border-slate-200 py-2 text-center text-2xs font-semibold normal-case tracking-normal text-slate-500 last:border-r-0">{wibInputDate(date).slice(8, 10)}</span>)}</div>
             </div>
           </div>
         </div>
@@ -136,12 +133,13 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             const machine = machineById.get(groupMachineId);
             const collapsed = collapsedMachines.has(groupMachineId);
             return (
-              <div className="contents" key={groupMachineId}>
-                <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
+              <div className="contents" key={groupMachineId} data-drop-machine-id={groupMachineId} data-drop-enabled={machine?.isActive === true}>
+                <button type="button" data-machine-heading aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
                   <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                  <span>{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                  <span>{machine?.lineCode ?? "Unassigned"}</span>
                   <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
                 </button>
+                {!collapsed && rows.length === 0 && <div className="col-span-5 flex min-h-14 items-center justify-end border-b border-slate-200 px-4 text-2xs text-slate-400">Drop a job here</div>}
                 {!collapsed && rows.map((row) => row.type === "job" ? (
                   <div className="contents group" key={`job-${row.job.id}`}>
                     <div className="flex min-h-14 items-center truncate border-b border-slate-200 px-2 py-2 font-semibold text-slate-700 group-hover:bg-slate-50">{row.job.sourceOrderRefs || "—"}</div>
@@ -156,7 +154,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                 ) : (
                   <div className="contents group" key={`maintenance-${row.window.id}`}>
                     <div className="col-span-4 grid min-h-14 min-w-0 bg-red-50 text-left text-red-600 group-hover:bg-red-100" style={{ gridTemplateColumns: INFO_COLS }}>
-                      <span className="col-span-3 flex min-w-0 items-center gap-2 px-3 py-2"><Wrench size={14} className="shrink-0" /><span className="truncate font-semibold">{row.window.type}</span></span>
+                      <span className="col-span-3 flex min-w-0 items-center gap-2 px-3 py-2"><Wrench size={14} className="shrink-0" /><span className="truncate font-semibold">{maintenanceTypeLabel(row.window.type)}</span></span>
                       <span className="flex min-w-0 items-center whitespace-nowrap px-2 py-2 pl-3 text-2xs font-medium">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
                     </div>
                     <MaintenanceBar window={row.window} weekStart={weekStart} machine={machineById.get(row.window.machineId)} onSelect={onSelectMaintenance} wrapperClassName="bg-red-50 group-hover:bg-red-100" />
@@ -181,7 +179,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             <div key={`agenda-${groupMachineId}`}>
               <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="flex h-10 w-full items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 <ChevronRight size={14} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                <span className="min-w-0 flex-1 truncate">{machine ? `${machine.name} · ${machine.machineType}` : "Unassigned"}</span>
+                <span className="min-w-0 flex-1 truncate">{machine?.lineCode ?? "Unassigned"}</span>
                 <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-2xs font-medium text-slate-500">{rows.length}</span>
               </button>
               {!collapsed && <div className="divide-y divide-slate-200">
@@ -202,7 +200,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                   <button type="button" key={`agenda-maintenance-${row.window.id}`} onClick={() => onSelectMaintenance?.(row.window)} className="flex w-full items-start gap-3 bg-red-50 px-3 py-3 text-left text-red-700 hover:bg-red-100">
                     <Wrench size={14} className="mt-0.5 shrink-0" />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-semibold">{row.window.type}</span>
+                      <span className="block truncate text-xs font-semibold">{maintenanceTypeLabel(row.window.type)}</span>
                       {row.window.reason && <span className="mt-0.5 block truncate text-xs text-red-600">{row.window.reason}</span>}
                       <span className="mt-1 block text-2xs tabular-nums text-red-600">{formatScheduleDateTime(row.window.startAt)} → {formatScheduleDateTime(row.window.endAt)}</span>
                     </span>
@@ -220,9 +218,11 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
 
 function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { job: ScheduleJob; weekStart: Date; onSelect?: (job: ScheduleJob) => void; onMove?: (jobId: string, machineId: string, start: Date) => void; wrapperClassName?: string }) {
   const moved = useRef(false);
+  const cleanupDrag = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupDrag.current?.(), []);
   const start = new Date(job.startAt);
   const end = new Date(job.endAt);
-  const movable = !!onMove && (job.status === JobStatus.Open || job.status === JobStatus.ProductionPending) && !job.isLocked;
+  const movable = !!onMove && job.status === JobStatus.Open && !job.isLocked && start.getTime() > Date.now();
   const tone = ui.scheduleToneClass(job.status, false);
 
   return (
@@ -239,42 +239,88 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
       borderClassName="border-slate-200"
       onClick={(event) => {
         event.stopPropagation();
-        if (!movable) onSelect?.(job);
+        if (!movable || event.detail === 0) onSelect?.(job);
       }}
       onPointerDown={!movable ? undefined : (event) => {
+        if (event.button !== 0 || !event.isPrimary) return;
         event.preventDefault();
+        cleanupDrag.current?.();
         const element = event.currentTarget;
         const startX = event.clientX;
+        const startY = event.clientY;
+        const rect = element.getBoundingClientRect();
         const timelineWidth = element.parentElement?.clientWidth || 1;
-        const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime();
+        const startDay = wibStartOfDay(start).getTime();
+        let ghost: HTMLButtonElement | null = null;
+        let dropTarget: HTMLElement | null = null;
+        let pointerX = startX;
+        let pointerY = startY;
+        let frame = 0;
+        const updateTarget = () => {
+          dropTarget?.removeAttribute("data-drop-active");
+          dropTarget = document.elementFromPoint(pointerX, pointerY)?.closest<HTMLElement>('[data-drop-machine-id][data-drop-enabled="true"]') ?? null;
+          dropTarget?.setAttribute("data-drop-active", "true");
+        };
+        const autoScroll = () => {
+          if (moved.current) {
+            const shift = pointerY < 100 ? -12 : pointerY > window.innerHeight - 60 ? 12 : 0;
+            if (shift) { window.scrollBy(0, shift); updateTarget(); }
+          }
+          frame = requestAnimationFrame(autoScroll);
+        };
         moved.current = false;
         const pointerMove = (moveEvent: PointerEvent) => {
-          const delta = moveEvent.clientX - startX;
-          moved.current ||= Math.abs(delta) > 3;
-          element.style.transform = `translateX(${delta}px)`;
+          pointerX = moveEvent.clientX;
+          pointerY = moveEvent.clientY;
+          moved.current ||= Math.hypot(pointerX - startX, pointerY - startY) > 4;
+          if (!moved.current) return;
+          if (!ghost) {
+            ghost = element.cloneNode(true) as HTMLButtonElement;
+            ghost.removeAttribute("data-testid");
+            ghost.setAttribute("aria-hidden", "true");
+            ghost.tabIndex = -1;
+            Object.assign(ghost.style, { position: "fixed", width: `${rect.width}px`, height: `${rect.height}px`, pointerEvents: "none", zIndex: "1000", opacity: "0.85" });
+            document.body.appendChild(ghost);
+            element.style.opacity = "0.35";
+          }
+          ghost.style.left = `${rect.left + pointerX - startX}px`;
+          ghost.style.top = `${rect.top + pointerY - startY}px`;
+          updateTarget();
         };
         const pointerUp = (upEvent: PointerEvent) => {
-          window.removeEventListener("pointermove", pointerMove);
-          window.removeEventListener("pointerup", pointerUp);
-          window.removeEventListener("pointercancel", pointerCancel);
-          element.style.transform = "translateX(0)";
+          pointerX = upEvent.clientX;
+          pointerY = upEvent.clientY;
+          updateTarget();
+          const targetMachineId = dropTarget?.dataset.dropMachineId;
+          cleanupDrag.current?.();
+          if (!moved.current) {
+            onSelect?.(job);
+            return;
+          }
+          if (!targetMachineId) return;
           const currentDay = Math.floor((startDay - weekStart.getTime()) / 86400000);
           const targetDay = Math.max(0, Math.min(6, currentDay + Math.round((upEvent.clientX - startX) / (timelineWidth / 7))));
-          if (targetDay !== currentDay) {
-            const next = new Date(start);
-            next.setFullYear(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + targetDay);
-            onMove?.(job.id, job.machineId, next);
-          } else if (!moved.current) onSelect?.(job);
+          if (targetDay !== currentDay || targetMachineId !== job.machineId) {
+            onMove?.(job.id, targetMachineId, addWibDays(start, targetDay - currentDay));
+          }
         };
         const pointerCancel = () => {
           window.removeEventListener("pointermove", pointerMove);
           window.removeEventListener("pointerup", pointerUp);
           window.removeEventListener("pointercancel", pointerCancel);
-          element.style.transform = "translateX(0)";
+          window.removeEventListener("blur", pointerCancel);
+          cancelAnimationFrame(frame);
+          ghost?.remove();
+          dropTarget?.removeAttribute("data-drop-active");
+          element.style.opacity = "";
+          cleanupDrag.current = null;
         };
+        cleanupDrag.current = pointerCancel;
         window.addEventListener("pointermove", pointerMove);
         window.addEventListener("pointerup", pointerUp);
         window.addEventListener("pointercancel", pointerCancel);
+        window.addEventListener("blur", pointerCancel);
+        frame = requestAnimationFrame(autoScroll);
       }}
     />
   );

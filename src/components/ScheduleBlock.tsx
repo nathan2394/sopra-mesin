@@ -1,21 +1,17 @@
 import type { CSSProperties, MouseEventHandler, PointerEventHandler } from "react";
 import { LockKeyhole } from "lucide-react";
-import { formatMonthDay } from "../utils/dateFormat";
+import { formatDateTime, formatMonthDay, toJakartaDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-const formatClock = (date: Date) => date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+const formatClock = wibInputTime;
 
 export function scheduleBlockGeometry(start: Date, end: Date, weekStart: Date) {
-  const startDay = startOfDay(start).getTime();
+  const startDay = wibStartOfDay(start).getTime();
   // Intervals are end-exclusive: midnight belongs to the following day.
-  const endDay = startOfDay(new Date(end.getTime() - 1)).getTime();
-  const weekStartDay = startOfDay(weekStart).getTime();
+  const endDay = wibStartOfDay(end.getTime() - 1).getTime();
+  const weekStartDay = wibStartOfDay(weekStart).getTime();
   const weekEndDay = weekStartDay + 6 * DAY_MS;
   const visibleStartDay = Math.max(startDay, weekStartDay);
   const visibleEndDay = Math.min(endDay, weekEndDay);
@@ -25,16 +21,16 @@ export function scheduleBlockGeometry(start: Date, end: Date, weekStart: Date) {
 }
 
 export function scheduleBlockLabel(start: Date, end: Date, weekStart: Date) {
-  const weekStartDay = startOfDay(weekStart);
+  const weekStartDay = wibStartOfDay(weekStart);
   const weekEnd = new Date(weekStartDay.getTime() + WEEK_MS);
   const visibleStart = start < weekStartDay ? weekStartDay : start;
   const visibleEnd = end > weekEnd ? weekEnd : end;
-  const isMidnight = (date: Date) => date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  const isMidnight = (date: Date) => toJakartaDateTime(date).slice(11, 19) === "00:00:00";
   const groupingEnd = isMidnight(visibleEnd) && visibleEnd.getTime() > visibleStart.getTime()
     ? new Date(visibleEnd.getTime() - 1)
     : visibleEnd;
 
-  if (startOfDay(visibleStart).getTime() === startOfDay(groupingEnd).getTime()) {
+  if (wibStartOfDay(visibleStart).getTime() === wibStartOfDay(groupingEnd).getTime()) {
     return `${formatMonthDay(visibleStart)}, ${formatClock(visibleStart)} - ${formatClock(visibleEnd)}`;
   }
   return `${formatMonthDay(visibleStart)}, ${formatClock(visibleStart)} - ${formatMonthDay(visibleEnd)}, ${formatClock(visibleEnd)}`;
@@ -71,7 +67,7 @@ export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, 
         data-testid={testId}
         className={`absolute top-2 flex h-10 flex-col justify-center gap-0.5 touch-none select-none overflow-hidden rounded px-2 text-left text-3xs font-semibold leading-3 text-white cursor-pointer ${toneClassName}${className ? ` ${className}` : ""}`}
         style={style}
-        title={`${locked ? "Locked · " : ""}${start.toLocaleString()} - ${end.toLocaleString()}`}
+        title={`${locked ? "Locked · " : ""}${formatDateTime(start)} WIB - ${formatDateTime(end)} WIB`}
         onClick={onClick}
         onPointerDown={onPointerDown}
       >

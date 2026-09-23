@@ -4,19 +4,21 @@ import type { PagedResult } from "../api/client";
 import { notify } from "../components/Notification";
 import { OrderSourceType } from "../types";
 import type { Order, OrderDraft } from "../types";
+import { toJakartaDateTime } from "../utils/dateFormat";
 
 interface ApiOrderLine {
   id: number;
   itemCode?: string;
   itemName: string;
   quantity: number;
+  importedAt?: string;
 }
 
 interface ApiOrder {
   id: number;
   source: string;
   paymentStatus?: "Paid" | "Unpaid";
-  externalId?: number;
+  externalId?: string;
   orderNumber: string;
   purchaseOrderNumber?: string;
   customerName?: string;
@@ -43,7 +45,7 @@ const sourceToApi: Record<OrderSourceType, { source: string; paymentStatus: "Pai
 };
 
 const fromApi = (order: ApiOrder): Order => {
-  const timestamp = order.orderDate ?? new Date().toISOString();
+  const timestamp = order.orderDate ?? toJakartaDateTime(Date.now());
   return {
     id: String(order.id),
     sourceType: sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid,
@@ -60,6 +62,7 @@ const fromApi = (order: ApiOrder): Order => {
       itemCode: line.itemCode,
       description: line.itemName,
       qty: line.quantity,
+      importedAt: line.importedAt,
     })),
     createdAt: timestamp,
     updatedAt: timestamp,
@@ -85,7 +88,7 @@ const toApi = (order: OrderDraft) => ({
 });
 
 const report = (cause: unknown) =>
-  notify("error", cause instanceof Error ? cause.message : "API request failed");
+  notify("error", cause instanceof Error ? cause.message : "The request could not be completed. Refresh and check the data before trying again.");
 
 interface OrderQuery {
   page?: number;
@@ -96,6 +99,16 @@ interface OrderQuery {
   sortDir?: "asc" | "desc";
 }
 
+export interface OrderSummary {
+  totalOrders: number;
+  soPaid: number;
+  scUnpaid: number;
+  piUnpaid: number;
+  manualRequest: number;
+  manualForecast: number;
+  totalQuantity: number;
+}
+
 export async function getOrderPage({
   page = 1,
   pageSize = 100,
@@ -103,7 +116,7 @@ export async function getOrderPage({
   source = "",
   sortBy = "",
   sortDir = "asc",
-}: OrderQuery = {}): Promise<PagedResult<Order>> {
+}: OrderQuery = {}): Promise<PagedResult<Order, OrderSummary>> {
   const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search) query.set("search", search);
   if (source) {
@@ -115,7 +128,7 @@ export async function getOrderPage({
     query.set("sortDir", sortDir);
   }
 
-  const result = await api<PagedResult<ApiOrder>>(`/orders?${query}`);
+  const result = await api<PagedResult<ApiOrder, OrderSummary>>(`/orders?${query}`);
   return { ...result, items: result.items.map(fromApi) };
 }
 
@@ -129,6 +142,7 @@ export function useOrders(
 ) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [pagination, setPagination] = useState({ page, pageSize, totalItems: 0, totalPages: 0 });
+  const [summary, setSummary] = useState<OrderSummary>({ totalOrders: 0, soPaid: 0, scUnpaid: 0, piUnpaid: 0, manualRequest: 0, manualForecast: 0, totalQuantity: 0 });
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -142,6 +156,7 @@ export function useOrders(
         totalPages: result.totalPages,
       });
       setOrders(result.items);
+      if (result.summary) setSummary(result.summary);
     } catch (cause) {
       report(cause);
     } finally {
@@ -165,7 +180,7 @@ export function useOrders(
   const updateOrder = useCallback(async (id: string, draft: OrderDraft) => {
     try {
       await api<ApiOrder>(`/orders/${id}`, {
-        method: "PUT",
+        method: "POST",
         body: JSON.stringify(toApi(draft)),
       });
       await refresh();
@@ -183,5 +198,5 @@ export function useOrders(
     } catch (cause) { report(cause); return false; }
   }, [refresh]);
 
-  return { orders, pagination, isLoading, addOrder, updateOrder, removeOrder, refresh };
+  return { orders, pagination, summary, isLoading, addOrder, updateOrder, removeOrder, refresh };
 }

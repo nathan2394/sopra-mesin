@@ -17,15 +17,22 @@ interface Props {
 }
 
 function emptyDraft(): MachineDraft {
-  return { lineCode: "", name: "AOKI", machineType: "", allowedCavity: 8, isActive: true };
+  return { lineCode: "", name: "AOKI", machineType: "", isActive: true };
 }
 
+const toDraft = (machine: Machine): MachineDraft => ({
+  lineCode: machine.lineCode,
+  name: machine.name,
+  machineType: machine.machineType,
+  isActive: machine.isActive,
+});
+
 export function MachineForm({ initial, onSave, onCancel }: Props) {
-  const [draft, setDraft] = useState<MachineDraft>(initial ?? emptyDraft());
+  const [draft, setDraft] = useState<MachineDraft>(initial ? toDraft(initial) : emptyDraft());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setDraft(initial ?? emptyDraft());
+    setDraft(initial ? toDraft(initial) : emptyDraft());
   }, [initial]);
 
   const handleSave = () => {
@@ -69,30 +76,17 @@ export function MachineForm({ initial, onSave, onCancel }: Props) {
         />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className={ui.label}>
-          Allowed cavity
+      <label className={ui.label}>
+        <span className="flex items-center gap-2 text-sm text-slate-800">
           <input
-            className={ui.input}
-            type="number"
-            min={1}
-            value={draft.allowedCavity}
-            onChange={(e) => setDraft({ ...draft, allowedCavity: Number(e.target.value) })}
+            type="checkbox"
+            className="h-4 w-4 accent-brand-600"
+            checked={draft.isActive}
+            onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
           />
-        </label>
-        <label className={ui.cx(ui.label, "justify-center")}>
-          &nbsp;
-          <span className="flex items-center gap-2 text-sm text-slate-800">
-            <input
-              type="checkbox"
-              className="h-4 w-4 accent-brand-600"
-              checked={draft.isActive}
-              onChange={(e) => setDraft({ ...draft, isActive: e.target.checked })}
-            />
-            Active
-          </span>
-        </label>
-      </div>
+          Active
+        </span>
+      </label>
 
       {error && <div className={ui.bannerError}>{error}</div>}
 

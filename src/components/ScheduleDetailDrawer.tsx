@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Drawer } from "./Drawer";
-import { JobStatus, MaintenanceType } from "../types";
+import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { CreatableSelect, Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
-import { formatDate, formatDateTime } from "../utils/dateFormat";
+import { formatDate, formatDateTime, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
 
 interface Props {
   job?: ScheduleJob;
@@ -25,19 +25,11 @@ interface DowntimeReason {
   estimatedHours: number;
 }
 
-const inputDate = (value: string) => {
-  const date = new Date(value);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-};
-
-const inputTime = (value: string) => {
-  const date = new Date(value);
-  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-};
-
-const mergeDateTime = (date: string, time: string) => `${date}T${time}:00`;
+const inputDate = wibInputDate;
+const inputTime = wibInputTime;
+const mergeDateTime = wibInputDateTime;
 const displayDateTime = (value: string) => `${formatDateTime(value)} WIB`;
-const displayTime = (value: string) => `${new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false })} WIB`;
+const displayTime = (value: string) => `${wibInputTime(value)} WIB`;
 
 function DrawerDateTime({ value }: { value: string }) {
   return <><span className="hidden sm:inline">{displayDateTime(value)}</span><span className="sm:hidden"><span className="block">{formatDate(value)}</span><span className="mt-0.5 block text-slate-500">{displayTime(value)}</span></span></>;
@@ -82,6 +74,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
   const [startTime, setStartTime] = useState(job ? inputTime(job.startAt) : "");
   const [endDate, setEndDate] = useState(job ? inputDate(job.endAt) : "");
   const [endTime, setEndTime] = useState(job ? inputTime(job.endAt) : "");
+  const [scheduleEdited, setScheduleEdited] = useState(false);
   const isComplete = job?.status === JobStatus.ProductionComplete;
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
@@ -103,11 +96,12 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
     setStartTime(job ? inputTime(job.startAt) : "");
     setEndDate(job ? inputDate(job.endAt) : "");
     setEndTime(job ? inputTime(job.endAt) : "");
+    setScheduleEdited(false);
   }, [job]);
 
   return (
     <Drawer
-      title={isMaintenance ? maintenance?.type ?? "Maintenance" : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
+      title={isMaintenance && maintenance ? maintenanceTypeLabel(maintenance.type) : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
       subtitle={machine ? `${machine.name} · ${machine.machineType}` : undefined}
       onClose={onClose}
       ariaLabel="Schedule detail"
@@ -141,6 +135,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <div><p className="text-13 text-slate-400">Machine code</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine?.lineCode ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Schedule</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Frequency</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType === "Recurring" ? [maintenance.repeatType, maintenance.repeatValue].filter(Boolean).join(" · ") : "One Time"}</p></div>
+              {maintenance?.type === MaintenanceType.Setup && <div><p className="text-13 text-slate-400">Setup percentage</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance.setupPercentage || "Not recorded"}</p></div>}
               <div className="col-span-2"><p className="text-13 text-slate-400">Reason</p><p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p></div>
             </div>
           )}
@@ -150,8 +145,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <p className="text-13 text-slate-400">{isMaintenance ? "Start Maintenance" : "Start Production"}</p>
               {!isMaintenance && canEditSchedule ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
@@ -162,8 +157,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <p className="text-13 text-slate-400">{isMaintenance ? "End Maintenance" : "End Production"}</p>
               {!isMaintenance && canEditSchedule ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
@@ -175,16 +170,17 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
           {!isMaintenance && (
             <div className="rounded-lg bg-slate-50 p-4">
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                <span className="text-sm font-semibold text-slate-900">Setup Maintenance</span>
+                <span className="text-sm font-semibold text-slate-900">Setup</span>
                 {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
               </div>
+              {setupMaintenance && <p className="mt-3 text-xs text-slate-500"><span>Setup percentage</span><span className="ml-2 font-semibold text-slate-950">{setupMaintenance.setupPercentage || "Not recorded"}</span></p>}
               {setupMaintenance ? (
                 <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
                   <TimelinePoint label="Start Setup" value={setupMaintenance.startAt} />
                   <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
                   <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
                 </div>
-              ) : <p className="mt-2 text-xs text-slate-500">No setup maintenance linked to this order.</p>}
+              ) : <p className="mt-2 text-xs text-slate-500">No setup linked to this order.</p>}
             </div>
           )}
 
@@ -256,8 +252,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             {canSave && <button type="button" disabled={invalidSchedule} className={ui.btnPrimary} onClick={async () => {
               const saved = await onSave?.({
                 isLocked: locked,
-                startAt: canEditSchedule ? mergeDateTime(startDate, startTime) : undefined,
-                endAt: canEditSchedule ? mergeDateTime(endDate, endTime) : undefined,
+                startAt: canEditSchedule && scheduleEdited ? mergeDateTime(startDate, startTime) : undefined,
+                endAt: canEditSchedule && scheduleEdited ? mergeDateTime(endDate, endTime) : undefined,
                 correctiveMaintenance: correctiveMaintenance ? { reason, estimatedHours: Number(estimatedHours) } : undefined,
               });
               if (saved !== false) onClose();

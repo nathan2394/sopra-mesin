@@ -12,6 +12,7 @@ export interface OrderLineItem {
   itemCode?: string;
   description: string;
   qty: number;
+  importedAt?: string;
 }
 
 export interface Order {
@@ -38,13 +39,13 @@ export interface Machine {
   lineCode: string;
   name: string;
   machineType: string;
-  allowedCavity: number;
+  cavity?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export type MachineDraft = Omit<Machine, "id" | "createdAt" | "updatedAt">;
+export type MachineDraft = Omit<Machine, "id" | "cavity" | "createdAt" | "updatedAt">;
 
 export const MaintenanceType = {
   Preventive: "Preventive Maintenance",
@@ -53,11 +54,14 @@ export const MaintenanceType = {
   Trial: "Trial Maintenance",
 } as const;
 export type MaintenanceType = (typeof MaintenanceType)[keyof typeof MaintenanceType];
+export const maintenanceTypeLabel = (type: MaintenanceType) =>
+  type === MaintenanceType.Setup ? "Setup" : type === MaintenanceType.Trial ? "Trial" : type;
 
 export interface MaintenanceWindow {
   id: string;
   machineId: string;
   affectedScheduleId?: string;
+  setupPercentage?: string;
   startAt: string;
   endAt: string;
   type: MaintenanceType;
@@ -90,6 +94,7 @@ export interface ScheduleJob {
   deliveryDate: string;
   sourceOrderRefs?: string;
   status: JobStatus;
+  setupMaintenanceId?: string;
   blockingMaintenanceId?: string;
   blockingMaintenanceReason?: string;
   customerName?: string;

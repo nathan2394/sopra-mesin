@@ -30,12 +30,13 @@ export const segmentedWrap =
 export const segmentedBtn = "rounded px-3.5 py-1.5 text-sm font-semibold text-slate-500 hover:bg-slate-50";
 export const segmentedBtnActive = "bg-brand-600 text-white hover:bg-brand-700";
 
-export const page = "mx-auto w-full max-w-[1440px] px-2.5 pt-2.5 pb-10";
+export const page = "mx-auto w-full max-w-[1440px] px-4 pb-10 pt-4 sm:px-5 lg:px-6";
 
-export const filtersRow = "mb-3.5 flex flex-wrap items-center gap-2.5";
-export const searchInput = inputSm + " flex-1 min-w-[220px]";
-export const filterSelect = inputSm + " w-auto";
-export const filterSelectButton = "relative " + filterSelect + " min-w-36 shrink-0 cursor-pointer pr-8 text-left";
+export const filtersRow = "mb-3.5 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:gap-2.5";
+export const searchInput = inputSm + " col-span-2 min-w-0 sm:min-w-[220px] sm:flex-1";
+export const filterSelect = inputSm + " min-w-0";
+export const filterSelectButton = "relative " + filterSelect + " w-full cursor-pointer pr-8 text-left sm:w-auto sm:min-w-36 sm:shrink-0";
+export const filterSummary = "col-span-2 justify-self-end whitespace-nowrap text-xs text-slate-500 tabular-nums sm:col-span-1 sm:ml-auto";
 
 export const card = "rounded-lg border border-slate-200 bg-white p-4";
 
@@ -43,7 +44,7 @@ export const tableCard = "rounded-lg border border-slate-200 bg-white overflow-h
 
 export const table = "w-full border-collapse text-xs tabular-nums";
 export const th =
-  "bg-slate-50 px-3 py-2 text-left text-2xs font-semibold uppercase tracking-[0.06em] text-slate-400 border-b border-slate-200";
+  "sticky top-0 z-10 bg-slate-50 px-3 py-2 text-left text-2xs font-semibold uppercase tracking-[0.06em] text-slate-400 border-b border-slate-200";
 export const td = "px-3 py-2.5 text-left border-b border-slate-200";
 
 export const muted = "text-slate-500 text-sm";

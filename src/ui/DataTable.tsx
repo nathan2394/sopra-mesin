@@ -40,7 +40,7 @@ export function DataTable<T>({ rows, columns, rowKey, emptyText = "No data found
   const showLoadingRow = isLoading && rows.length === 0;
 
   return <div className={containerClassName}>
-    <div className="overflow-x-auto">
+    <div className="max-h-[calc(100dvh-12rem)] overflow-auto overscroll-contain">
       <table className={ui.cx(ui.table, tableClassName)}>
         <thead><tr>{columns.map((column) => <th key={column.key} className={ui.cx(ui.th, column.className)}>{column.header}</th>)}</tr></thead>
         <tbody className={isLoading && rows.length > 0 ? "opacity-60 transition-opacity" : "transition-opacity"}>

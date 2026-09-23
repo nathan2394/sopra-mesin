@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
@@ -42,7 +42,7 @@ export function OrdersPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Order | null>(null);
   const searchQuery = useDebouncedValue(search.trim());
-  const { orders, pagination, addOrder, updateOrder, removeOrder, isLoading } = useOrders(
+  const { orders, pagination, summary, addOrder, updateOrder, removeOrder, isLoading } = useOrders(
     page,
     15,
     searchQuery,
@@ -56,20 +56,6 @@ export function OrdersPage() {
       setPage(pagination.totalPages);
     }
   }, [page, pagination.totalPages]);
-
-  const stats = useMemo(() => {
-    const bySource = (t: OrderSourceType) => orders.filter((o) => o.sourceType === t);
-    const totalQty = orders.reduce((sum, o) => sum + computeOrderTotals(o.items).qty, 0);
-    return {
-      total: pagination.totalItems,
-      so: bySource(OrderSourceType.SoPaid).length,
-      sc: bySource(OrderSourceType.ScUnpaid).length,
-      pi: bySource(OrderSourceType.PiUnpaid).length,
-      mr: bySource(OrderSourceType.ManualRequest).length,
-      mf: bySource(OrderSourceType.ManualForecast).length,
-      totalQty,
-    };
-  }, [orders, pagination.totalItems]);
 
   const handleSort = (key: SortKey) => {
     setPage(1);
@@ -86,18 +72,18 @@ export function OrdersPage() {
       <PageHeader
         breadcrumb={[]}
         title="Orders"
-        subtitle="Imported demand and manually entered requests or forecasts."
+        subtitle="Review imported orders and manage production requests and forecasts."
         actions={<button type="button" className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New order</button>}
       />
 
       <StatsRow>
-        <StatCard value={stats.total} label="Total orders" />
-        <StatCard value={stats.so} label="SO Paid" />
-        <StatCard value={stats.sc} label="SC Unpaid" />
-        <StatCard value={stats.pi} label="PI Unpaid" />
-        <StatCard value={stats.mr} label="Manual Request" />
-        <StatCard value={stats.mf} label="Manual Forecast" />
-        <StatCard value={stats.totalQty.toLocaleString()} label="Qty shown (pcs)" />
+        <StatCard value={summary.totalOrders} label="Total orders" />
+        <StatCard value={summary.soPaid} label="SO Paid" />
+        <StatCard value={summary.scUnpaid} label="SC Unpaid" />
+        <StatCard value={summary.piUnpaid} label="PI Unpaid" />
+        <StatCard value={summary.manualRequest} label="Manual Request" />
+        <StatCard value={summary.manualForecast} label="Manual Forecast" />
+        <StatCard value={summary.totalQuantity.toLocaleString()} label="Total qty (pcs)" />
       </StatsRow>
 
       <div className={ui.filtersRow}>
@@ -122,13 +108,13 @@ export function OrdersPage() {
             ...Object.values(OrderSourceType).map((s) => ({ value: s, label: SOURCE_LABEL[s] })),
           ]}
         />
-        <span className={ui.muted}>{orders.length} of {pagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
 
       <OrderTable
         orders={orders}
         onEdit={(order) => { setEditing(order); setFormOpen(true); }}
-        onDelete={(order) => { if (window.confirm(`Delete order ${order.orderNo}?`)) void removeOrder(order.id); }}
+        onDelete={(order) => { if (window.confirm(`Delete order ${order.orderNo}? This cannot be undone. Cancel to keep the order.`)) void removeOrder(order.id); }}
         sortKey={sortKey}
         sortDir={sortDir}
         onSort={handleSort}

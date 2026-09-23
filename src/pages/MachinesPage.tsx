@@ -20,6 +20,7 @@ export function MachinesPage() {
     machines,
     machineOptions,
     machinePagination,
+    machineSummary,
     scheduleJobs,
     addMachine,
     updateMachine,
@@ -40,11 +41,6 @@ export function MachinesPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Machine | null>(null);
 
-  const stats = useMemo(() => {
-    const active = machineOptions.filter((machine) => machine.isActive).length;
-    return { total: machineOptions.length, active, inactive: machineOptions.length - active };
-  }, [machineOptions]);
-
   const jobsByMachine = useMemo(() => {
     const map = new Map<string, number>();
     scheduleJobs.forEach((job) => map.set(job.machineId, (map.get(job.machineId) ?? 0) + 1));
@@ -60,15 +56,15 @@ export function MachinesPage() {
       <PageHeader
         breadcrumb={[]}
         title="Machines"
-        subtitle="Machine master data."
+        subtitle="Manage production machines, availability, types, and assigned schedules."
         actions={<button className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New machine</button>}
       />
 
       <StatsRow>
-        <StatCard value={stats.total} label="Total machines" />
-        <StatCard value={stats.active} label="Active" />
-        <StatCard value={stats.inactive} label="Inactive" />
-        <StatCard value={scheduleJobs.length} label="Scheduled jobs" />
+        <StatCard value={machineSummary.totalMachines} label="Total machines" />
+        <StatCard value={machineSummary.active} label="Active" />
+        <StatCard value={machineSummary.inactive} label="Inactive" />
+        <StatCard value={machineSummary.scheduledJobs} label="Scheduled jobs" />
       </StatsRow>
 
       <div className={ui.filtersRow}>
@@ -85,7 +81,7 @@ export function MachinesPage() {
           buttonClassName={ui.filterSelectButton}
           options={[{ value: "All", label: "All statuses" }, { value: "Active", label: "Active" }, { value: "Inactive", label: "Inactive" }]}
         />
-        <span className={ui.muted}>{machines.length} of {machinePagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{machines.length} of {machinePagination.totalItems} shown</span>
       </div>
 
       <DataTable
@@ -95,7 +91,7 @@ export function MachinesPage() {
           { key: "line", header: "Machine code", cell: (machine) => machine.lineCode },
           { key: "name", header: "Name", cell: (machine) => machine.name },
           { key: "type", header: "Type", cell: (machine) => <span className={ui.badgeNeutral}>{machine.machineType}</span> },
-          { key: "cavity", header: "Allowed cavity", cell: (machine) => machine.allowedCavity },
+          { key: "cavity", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
           { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (machine) => <><button className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button><button className={ui.btnLinkDanger} onClick={() => { const jobCount = jobsByMachine.get(machine.id) ?? 0; const warning = jobCount > 0 ? ` This also removes ${jobCount} scheduled job(s) on it.` : ""; if (window.confirm(`Delete machine ${machine.lineCode}?${warning}`)) void removeMachine(machine.id); }}>Delete</button></> },

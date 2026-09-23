@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { api } from "../api/client";
 import { Drawer } from "../components/Drawer";
@@ -8,7 +8,7 @@ import { useProduction } from "../hooks/useProduction";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { MaintenanceType } from "../types";
 import type { MaintenanceWindow } from "../types";
-import { formatDate } from "../utils/dateFormat";
+import { addWibDays, formatDate, toJakartaDateTime, wibDayOfWeek, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
 import { DataTable } from "../ui/DataTable";
 import { CreatableSelect, MultiSelect, Select } from "../ui/Select";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -132,7 +132,7 @@ function MaintenanceScheduleDrawer({
                 options={[
                   { value: MaintenanceType.Preventive, label: "Preventive Maintenance" },
                   { value: MaintenanceType.Corrective, label: "Corrective Maintenance" },
-                  { value: MaintenanceType.Trial, label: "Trial Maintenance" },
+                  { value: MaintenanceType.Trial, label: "Trial" },
                 ]}
               />
             </label>
@@ -206,6 +206,7 @@ export function MaintenancePage() {
     machineOptions,
     maintenanceWindows,
     maintenancePagination,
+    maintenanceSummary,
     addMaintenanceWindows,
     updateMaintenanceWindow,
     removeMaintenanceWindow,
@@ -214,6 +215,7 @@ export function MaintenancePage() {
   } = useProduction({
     machineOptions: true,
     maintenance: {
+      excludeSetup: true,
       page: maintenancePage,
       pageSize: 15,
       search: maintenanceSearchQuery,
@@ -233,7 +235,7 @@ export function MaintenancePage() {
   const [mwAt, setMwAt] = useState("09:00");
   const [mwDuration, setMwDuration] = useState(6);
   const [mwDurationUnit, setMwDurationUnit] = useState<DurationUnit>("hours");
-  const [mwStartsOn, setMwStartsOn] = useState(new Date().toISOString().slice(0, 10));
+  const [mwStartsOn, setMwStartsOn] = useState(wibInputDate());
   const [mwType, setMwType] = useState<MaintenanceType>(MaintenanceType.Preventive);
   const [mwReason, setMwReason] = useState("");
   const [maintenanceReasons, setMaintenanceReasons] = useState<MaintenanceReason[]>([]);
@@ -264,16 +266,9 @@ export function MaintenancePage() {
     if (maintenancePagination.totalPages > 0 && maintenancePage > maintenancePagination.totalPages) setMaintenancePage(maintenancePagination.totalPages);
   }, [maintenancePage, maintenancePagination.totalPages]);
 
-  const stats = useMemo(() => ({
-    total: maintenancePagination.totalItems,
-    machines: machineOptions.length,
-    oneTime: maintenanceWindows.filter((window) => window.scheduleType === "One Time").length,
-    recurring: maintenanceWindows.filter((window) => window.scheduleType === "Recurring").length,
-  }), [machineOptions.length, maintenancePagination.totalItems, maintenanceWindows]);
-
   const machineLabel = (id: string) => {
     const machine = machineOptions.find((row) => row.id === id);
-    return machine ? `${machine.name} · ${machine.machineType}` : "—";
+    return machine?.lineCode ?? "—";
   };
 
   const resetForm = () => {
@@ -286,7 +281,7 @@ export function MaintenancePage() {
     setMwAt("09:00");
     setMwDuration(6);
     setMwDurationUnit("hours");
-    setMwStartsOn(new Date().toISOString().slice(0, 10));
+    setMwStartsOn(wibInputDate());
     setMwType(MaintenanceType.Preventive);
     setMwReason("");
     setMwError(null);
@@ -312,9 +307,9 @@ export function MaintenancePage() {
     setMwScheduleType(window.scheduleType === "Recurring" ? "recurring" : "one-time");
     setMwRepeats(window.repeatType === "Weekly" ? "weekly" : "monthly");
     setMwWeekdays(window.repeatValue?.split(",").map((day) => weekdays.indexOf(day.trim())).filter((day) => day >= 0) ?? []);
-    setMwDay(Number(window.repeatValue) || start.getDate());
-    setMwAt(`${String(start.getHours()).padStart(2, "0")}:${String(start.getMinutes()).padStart(2, "0")}`);
-    setMwStartsOn(`${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`);
+    setMwDay(Number(window.repeatValue) || Number(wibInputDate(start).slice(8, 10)));
+    setMwAt(wibInputTime(start));
+    setMwStartsOn(wibInputDate(start));
     setMwDuration(durationHours % 24 === 0 ? durationHours / 24 : durationHours);
     setMwDurationUnit(durationHours % 24 === 0 ? "days" : "hours");
     setMwType(window.type);
@@ -329,39 +324,31 @@ export function MaintenancePage() {
       return;
     }
 
-    const [hours, minutes] = mwAt.split(":").map(Number);
-    const startsAt = new Date(`${mwStartsOn}T00:00:00`);
-    startsAt.setHours(hours, minutes, 0, 0);
+    let startsAt = new Date(wibInputDateTime(mwStartsOn, mwAt));
 
     if (mwScheduleType === "recurring" && mwRepeats === "monthly") {
-      const base = new Date(startsAt);
-      startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
-      if (startsAt < base) {
-        startsAt.setMonth(startsAt.getMonth() + 1, 1);
-        startsAt.setDate(Math.min(mwDay, new Date(startsAt.getFullYear(), startsAt.getMonth() + 1, 0).getDate()));
-      }
+      const [year, month, day] = mwStartsOn.split("-").map(Number);
+      const monthIndex = month - 1 + (mwDay < day ? 1 : 0);
+      const targetYear = year + Math.floor(monthIndex / 12);
+      const targetMonth = monthIndex % 12;
+      const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+      const date = `${targetYear}-${String(targetMonth + 1).padStart(2, "0")}-${String(Math.min(mwDay, lastDay)).padStart(2, "0")}`;
+      startsAt = new Date(wibInputDateTime(date, mwAt));
     }
 
     if (mwScheduleType === "recurring" && mwRepeats === "weekly") {
-      for (let offset = 0; offset < 7; offset += 1) {
-        const candidate = new Date(startsAt);
-        candidate.setDate(candidate.getDate() + offset);
-        if (mwWeekdays.includes(candidate.getDay())) {
-          startsAt.setTime(candidate.getTime());
-          break;
-        }
-      }
+      const currentDay = wibDayOfWeek(startsAt);
+      const offset = Math.min(...mwWeekdays.map((day) => (day - currentDay + 7) % 7));
+      startsAt = addWibDays(startsAt, offset);
     }
 
     const endsAt = new Date(startsAt.getTime() + mwDuration * (mwDurationUnit === "days" ? 86_400_000 : 3_600_000));
-    const format = (date: Date) =>
-      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}T${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}:${String(date.getSeconds()).padStart(2, "0")}`;
-
     setMwError(null);
     const draft = {
       affectedScheduleId: editingMaintenance?.affectedScheduleId,
-      startAt: format(startsAt),
-      endAt: format(endsAt),
+      setupPercentage: mwType === MaintenanceType.Setup ? editingMaintenance?.setupPercentage : undefined,
+      startAt: toJakartaDateTime(startsAt),
+      endAt: toJakartaDateTime(endsAt),
       type: mwType,
       reason: mwReason || undefined,
       scheduleType: mwScheduleType === "recurring" ? "Recurring" : "One Time",
@@ -381,7 +368,7 @@ export function MaintenancePage() {
       <PageHeader
         breadcrumb={[]}
         title="Maintenance"
-        subtitle="Maintenance and downtime windows."
+        subtitle="Manage preventive, corrective, and trial maintenance for each machine."
         actions={
           <>
             <input ref={importInput} className="hidden" type="file" accept=".xlsx" onChange={async (event) => {
@@ -394,25 +381,25 @@ export function MaintenancePage() {
                 await refreshMaintenance();
                 notify(
                   result.errors.length ? "warning" : "success",
-                  result.errors.length ? `${result.imported} imported. ${result.errors.join(" ")}` : `${result.imported} imported successfully.`,
+                  result.errors.length ? `${result.imported} maintenance schedules imported; ${result.errors.length} rows could not be imported. Correct and retry only the failed rows to avoid duplicates.\n\n${result.errors.join("\n")}` : `${result.imported} maintenance schedules imported successfully.`,
                 );
               } catch (cause) {
-                notify("error", cause instanceof Error ? cause.message : "Import failed");
+                notify("error", cause instanceof Error ? cause.message : "The import could not be completed. Check the Excel template and refresh the list before retrying; some rows may already have been imported.");
               }
               event.target.value = "";
             }} />
-            <button className={ui.btnSecondary} type="button" onClick={() => importInput.current?.click()}><Upload size={15} /> Import xlsx</button>
-            <a className={ui.btnSecondary} href="/maintenance-schedule-template.xlsx" download><Download size={15} /> Download Format</a>
+            <button className={ui.btnSecondary} type="button" onClick={() => importInput.current?.click()}><Upload size={15} /><span className="sm:hidden">Import</span><span className="hidden sm:inline">Import xlsx</span></button>
+            <a className={ui.btnSecondary} href="/maintenance-schedule-template.xlsx" download><Download size={15} /><span className="sm:hidden">Template</span><span className="hidden sm:inline">Download Format</span></a>
             <button className={ui.btnPrimary} type="button" onClick={openAddDrawer}><Plus size={15} /> Add Schedule</button>
           </>
         }
       />
 
       <StatsRow>
-        <StatCard value={stats.total} label="Maintenance windows" />
-        <StatCard value={stats.recurring} label="Recurring" />
-        <StatCard value={stats.oneTime} label="One time" />
-        <StatCard value={stats.machines} label="Machines" />
+        <StatCard value={maintenanceSummary.totalWindows} label="Maintenance windows" />
+        <StatCard value={maintenanceSummary.recurring} label="Recurring" />
+        <StatCard value={maintenanceSummary.oneTime} label="One time" />
+        <StatCard value={maintenanceSummary.machines} label="Machines" />
       </StatsRow>
 
       <div className={ui.filtersRow}>
@@ -421,6 +408,7 @@ export function MaintenancePage() {
           value={maintenanceMachineFilter}
           onChange={(value) => { setMaintenanceMachineFilter(value); setMaintenancePage(1); }}
           buttonClassName={ui.filterSelectButton}
+          className="col-span-2 sm:col-span-1"
           options={[{ value: "All", label: "All machines" }, ...machineOptions.map((machine) => ({ value: machine.id, label: `${machine.lineCode} — ${machine.name} ${machine.machineType}` }))]}
         />
         <Select
@@ -431,7 +419,7 @@ export function MaintenancePage() {
             { value: "All", label: "All types" },
             { value: MaintenanceType.Preventive, label: "Preventive Maintenance" },
             { value: MaintenanceType.Corrective, label: "Corrective Maintenance" },
-            { value: MaintenanceType.Trial, label: "Trial Maintenance" },
+            { value: MaintenanceType.Trial, label: "Trial" },
           ]}
         />
         <Select
@@ -440,7 +428,7 @@ export function MaintenancePage() {
           buttonClassName={ui.filterSelectButton}
           options={[{ value: "All", label: "All patterns" }, { value: "One Time", label: "One time" }, { value: "Recurring", label: "Recurring" }]}
         />
-        <span className={ui.muted}>{maintenanceWindows.length} of {maintenancePagination.totalItems} shown</span>
+        <span className={ui.filterSummary}>{maintenanceWindows.length} of {maintenancePagination.totalItems} shown</span>
       </div>
 
       <DataTable
@@ -448,9 +436,9 @@ export function MaintenancePage() {
         rowKey={(window) => window.id}
         emptyText="No maintenance windows logged."
         columns={[
-          { key: "machine", header: "Machine", cell: (window) => machineLabel(window.machineId) },
+          { key: "machine", header: "Machine code", cell: (window) => machineLabel(window.machineId) },
           { key: "type", header: "Type", cell: (window) => <span className={ui.badgeNeutral}>{window.type.replace(" Maintenance", "")}</span> },
-          { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${new Date(window.startAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}-${new Date(window.endAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` : "One time" },
+          { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${wibInputTime(window.startAt)}-${wibInputTime(window.endAt)}` : "One time" },
           { key: "next", header: "Next", cell: (window) => formatDate(window.startAt) },
           { key: "reason", header: "Reason", cell: (window) => window.reason ?? "—" },
           { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window) => <><button className={ui.btnLink} onClick={() => openEditMaintenance(window)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button></> },

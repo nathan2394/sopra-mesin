@@ -7,6 +7,7 @@ import { OrdersPage } from "./pages/OrdersPage";
 import { SchedulePage } from "./pages/SchedulePage";
 import { MachinesPage } from "./pages/MachinesPage";
 import { MaintenancePage } from "./pages/MaintenancePage";
+import { SetupPage } from "./pages/SetupPage";
 import { LoginPage } from "./pages/LoginPage";
 import { Notification } from "./components/Notification";
 
@@ -27,6 +28,7 @@ function App() {
               <Route path="/schedule" element={<SchedulePage />} />
               <Route path="/machines" element={<MachinesPage />} />
               <Route path="/maintenance" element={<MaintenancePage />} />
+              <Route path="/setup" element={<SetupPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

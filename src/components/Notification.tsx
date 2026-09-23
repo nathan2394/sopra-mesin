@@ -19,9 +19,9 @@ export const queueWarning = (message: string) =>
   sessionStorage.setItem(PENDING_WARNING_KEY, message);
 
 const styles = {
-  success: { title: "Action completed", icon: Check, iconClass: "bg-emerald-50 text-emerald-600" },
-  error: { title: "Action failed", icon: X, iconClass: "bg-red-50 text-red-600" },
-  warning: { title: "Attention required", icon: TriangleAlert, iconClass: "bg-amber-50 text-amber-600" },
+  success: { title: "Changes saved", icon: Check, iconClass: "bg-emerald-50 text-emerald-600" },
+  error: { title: "Unable to complete request", icon: X, iconClass: "bg-red-50 text-red-600" },
+  warning: { title: "Please check", icon: TriangleAlert, iconClass: "bg-amber-50 text-amber-600" },
 };
 
 export function Notification() {
@@ -44,7 +44,7 @@ export function Notification() {
   }, []);
 
   useEffect(() => {
-    if (!notice) return;
+    if (!notice || notice.type !== "success") return;
     const timer = window.setTimeout(() => setLeaving(true), 4_000);
     return () => window.clearTimeout(timer);
   }, [notice]);
@@ -78,7 +78,7 @@ export function Notification() {
         aria-labelledby="notification-title"
         aria-describedby="notification-message"
         aria-live="assertive"
-        className={`notification-panel relative w-full max-w-[400px] overflow-hidden rounded-lg border border-slate-200 bg-white px-7 pb-9 pt-9 text-center shadow-2xl sm:px-8 ${leaving ? "notification-panel-out" : ""}`}
+        className={`notification-panel relative max-h-[85vh] w-full max-w-[480px] overflow-y-auto rounded-lg border border-slate-200 bg-white px-7 pb-9 pt-9 text-center shadow-2xl sm:px-8 ${leaving ? "notification-panel-out" : ""}`}
       >
         <button
           type="button"
@@ -95,7 +95,7 @@ export function Notification() {
         <div className="notification-content">
           <div className="notification-copy">
             <h2 id="notification-title" className="text-xl font-bold tracking-tight text-slate-900">{style.title}</h2>
-            <p id="notification-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">{notice.message}</p>
+            <p id="notification-message" className="mx-auto max-w-[380px] whitespace-pre-line break-words text-sm leading-6 text-slate-500">{notice.message}</p>
           </div>
           <button
             type="button"
@@ -105,7 +105,7 @@ export function Notification() {
             Close
           </button>
         </div>
-        <span aria-hidden="true" className="notification-progress absolute inset-x-0 bottom-0 h-1 bg-brand-500" />
+        {notice.type === "success" && <span aria-hidden="true" className="notification-progress absolute inset-x-0 bottom-0 h-1 bg-brand-500" />}
       </section>
     </div>
   );

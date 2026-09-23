@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { PropsWithChildren } from "react";
 import { api } from "../api/client";
 
-export type OptimizationJobStatus = "Queued" | "Processing" | "Ready" | "Applied" | "Failed";
+export type OptimizationJobStatus = "Queued" | "Processing" | "Ready" | "Applied" | "Failed" | "Expired";
 
 export interface OptimizationJobSummary {
   id: number;
@@ -44,10 +44,10 @@ export function ScheduleOptimizationProvider({ children }: PropsWithChildren) {
 
   useEffect(() => { void refresh().catch(() => undefined); }, [refresh]);
   useEffect(() => {
-    if (!status.busy) return;
+    if (!status.busy && status.latest?.status !== "Ready") return;
     const timer = window.setInterval(() => void refresh().catch(() => undefined), 30_000);
     return () => window.clearInterval(timer);
-  }, [refresh, status.busy]);
+  }, [refresh, status.busy, status.latest?.status]);
 
   const value = useMemo<OptimizationContextValue>(() => ({
     ...status,
@@ -66,8 +66,8 @@ export function ScheduleOptimizationProvider({ children }: PropsWithChildren) {
       setStatus((current) => ({ ...current, latest: current.latest?.id === id ? job : current.latest }));
     },
     markApplied: async (id) => {
-      const job = await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/applied`, { method: "POST" });
-      setStatus({ busy: false, latest: job });
+      await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/applied`, { method: "POST" });
+      setStatus({ busy: false, latest: null });
     },
   }), [refresh, status]);
 

@@ -19,6 +19,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
   const job = optimization.latest;
   const active = job?.status === "Queued" || job?.status === "Processing";
   const unread = Boolean(job && !job.isRead && (job.status === "Ready" || job.status === "Failed"));
+  const hasNotification = Boolean(active || optimization.busy || job?.status === "Ready" || (job?.status === "Failed" && !job.isRead));
   const status = active
     ? { title: "Optimizing schedule", copy: "The result will appear here when it is ready.", Icon: LoaderCircle, color: "text-brand-600", spin: true }
     : job?.status === "Ready"
@@ -60,7 +61,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
           ref={notificationRef}
           className="group relative [&>summary::-webkit-details-marker]:hidden"
           onToggle={(event) => {
-            if (event.currentTarget.open && job && !active && !job.isRead) void optimization.markRead(job.id).catch(() => undefined);
+            if (!event.currentTarget.open && job && !active && !job.isRead) void optimization.markRead(job.id).catch(() => undefined);
           }}
         >
           <summary className="relative flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-md text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600" aria-label="Optimization notifications">
@@ -69,7 +70,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
               : <Bell size={16} />}
             {unread && <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-white" />}
           </summary>
-          <section className="fixed inset-x-4 top-15 sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-80 rounded-lg border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60">
+          {hasNotification && <section className="fixed inset-x-4 top-15 z-20 rounded-lg border border-slate-200 bg-white p-4 shadow-lg shadow-slate-200/60 sm:absolute sm:inset-x-auto sm:right-0 sm:top-[calc(100%+0.5rem)] sm:w-80">
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-50 ${status.color}`}>
                 <StatusIcon size={16} className={status.spin ? "animate-spin" : ""} />
@@ -87,7 +88,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
                 )}
               </div>
             </div>
-          </section>
+          </section>}
         </details>
 
         <details className="group relative [&>summary::-webkit-details-marker]:hidden">

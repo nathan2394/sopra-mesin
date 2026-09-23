@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, ChevronDown, LayoutGrid, List, Settings, Wrench, X } from "lucide-react";
+import { CalendarDays, ChevronDown, LayoutGrid, List, Settings, Wrench, X, ArrowLeftRight } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { Logo } from "./Logo";
 
@@ -26,6 +26,7 @@ const NAV_GROUPS = [
     items: [
       { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
       { to: "/maintenance", label: "Maintenance", icon: Wrench, end: false },
+      { to: "/setup", label: "Setup", icon: ArrowLeftRight, end: false },
     ],
   },
 ];
