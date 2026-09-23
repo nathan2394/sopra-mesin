@@ -1,13 +1,17 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Drawer } from "./Drawer";
+import { SetupGroupEditor } from "./SetupGroupEditor";
 import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
-import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
+import type { Machine, MaintenanceWindow, MaintenanceWindowDraft, ScheduleJob } from "../types";
 import { CreatableSelect, Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
-import { formatDate, formatDateTime, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
+import { formatDate, formatDateTime, toJakartaDateTime, wibInputDate, wibInputDateTime, wibInputTime } from "../utils/dateFormat";
 
 interface Props {
+  getSetupJobs?: (setup: MaintenanceWindow) => Promise<ScheduleJob[]>;
+  machines?: Machine[];
+  onSaveSetup?: (id: string, draft: MaintenanceWindowDraft) => Promise<boolean>;
   job?: ScheduleJob;
   maintenance?: MaintenanceWindow;
   setupMaintenance?: MaintenanceWindow;
@@ -64,7 +68,24 @@ function ArrowIcon() {
   );
 }
 
-export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linkedCorrectiveMaintenance, linkedJob, machine, orderRef, onSave, onClose }: Props) {
+export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linkedCorrectiveMaintenance, linkedJob, machine, orderRef, onSave, onClose, machines, onSaveSetup, getSetupJobs }: Props) {
+  const [setupJobs, setSetupJobs] = useState<{ id: string; jobs: ScheduleJob[]; error?: string } | null>(null);
+  const [reloadSetupJobs, setReloadSetupJobs] = useState(0);
+  useEffect(() => {
+    if (maintenance?.type !== MaintenanceType.Setup) return;
+    if (!getSetupJobs) {
+      setSetupJobs({ id: maintenance.id, jobs: [], error: "Daftar order belum dapat dimuat." });
+      return;
+    }
+    let active = true;
+    setSetupJobs(null);
+    void getSetupJobs(maintenance).then(jobs => {
+      if (active) setSetupJobs({ id: maintenance.id, jobs });
+    }).catch(() => {
+      if (active) setSetupJobs({ id: maintenance.id, jobs: [], error: "Daftar order belum dapat dimuat." });
+    });
+    return () => { active = false; };
+  }, [maintenance, getSetupJobs, reloadSetupJobs]);
   const [locked, setLocked] = useState(job?.isLocked ?? false);
   const [correctiveMaintenance, setCorrectiveMaintenance] = useState(false);
   const [reason, setReason] = useState("Burned Bearing");
@@ -75,15 +96,33 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
   const [endDate, setEndDate] = useState(job ? inputDate(job.endAt) : "");
   const [endTime, setEndTime] = useState(job ? inputTime(job.endAt) : "");
   const [scheduleEdited, setScheduleEdited] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(false);
+  const [savingOrder, setSavingOrder] = useState(false);
+  const [editingSetup, setEditingSetup] = useState(false);
+  const [setupDuration, setSetupDuration] = useState("");
+  const [setupPercentage, setSetupPercentage] = useState("");
+  const [setupReason, setSetupReason] = useState("");
+  const [savingSetup, setSavingSetup] = useState(false);
+  const setupDirty = editingSetup && !!maintenance && (Number(setupDuration) !== (Date.parse(maintenance.endAt) - Date.parse(maintenance.startAt)) / 60000 ||
+    setupPercentage !== (maintenance.setupPercentage?.replace(/%$/, "") ?? "") || setupReason !== (maintenance.reason ?? ""));
+  const invalidSetup = !Number.isFinite(Number(setupDuration)) || Number(setupDuration) <= 0 ||
+    (setupPercentage !== "" && !/^\d+(\.\d+)?$/.test(setupPercentage));
   const isComplete = job?.status === JobStatus.ProductionComplete;
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
   const canEditSchedule = canEdit && !locked && !!job;
+  const showScheduleInputs = canEditSchedule && editingSchedule;
   const isMaintenance = !!maintenance;
-  const canSave = !isMaintenance && !isComplete && (canEdit || !hasActiveCorrective);
-  const invalidSchedule = canEditSchedule && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
+  const invalidSchedule = showScheduleInputs && (!startDate || !startTime || !endDate || !endTime || new Date(mergeDateTime(endDate, endTime)).getTime() <= new Date(mergeDateTime(startDate, startTime)).getTime());
   const status = isMaintenance ? maintenance?.type ?? "Maintenance" : job?.status ?? JobStatus.Open;
   const statusClass = ui.scheduleToneClass(job?.status, isMaintenance);
+
+  useEffect(() => {
+    setEditingSetup(false);
+    setSetupDuration(maintenance ? String((Date.parse(maintenance.endAt) - Date.parse(maintenance.startAt)) / 60000) : "");
+    setSetupPercentage(maintenance?.setupPercentage?.replace(/%$/, "") ?? "");
+    setSetupReason(maintenance?.reason ?? "");
+  }, [maintenance]);
 
   useEffect(() => {
     void api<DowntimeReason[]>("/downtime-reasons").then(setReasons).catch(() => setReasons([]));
@@ -97,11 +136,32 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
     setEndDate(job ? inputDate(job.endAt) : "");
     setEndTime(job ? inputTime(job.endAt) : "");
     setScheduleEdited(false);
+    setEditingSchedule(false);
   }, [job]);
+
+  const saveOrder = async (section: "schedule" | "corrective") => {
+    if (!job || !onSave || savingOrder) return;
+    setSavingOrder(true);
+    try {
+      const saved = await onSave(section === "corrective"
+        ? { isLocked: job.isLocked, correctiveMaintenance: { reason: reason.trim(), estimatedHours: Number(estimatedHours) } }
+        : { isLocked: locked, startAt: showScheduleInputs && scheduleEdited ? mergeDateTime(startDate, startTime) : undefined, endAt: showScheduleInputs && scheduleEdited ? mergeDateTime(endDate, endTime) : undefined });
+      if (saved !== false) onClose();
+    } finally { setSavingOrder(false); }
+  };
+
+  const moveGroup = onSaveSetup && machines && (maintenance?.type === MaintenanceType.Setup ? maintenance : setupMaintenance) && (() => {
+            const setup = maintenance?.type === MaintenanceType.Setup ? maintenance : setupMaintenance!;
+            return <SetupGroupEditor key={`${setup.id}-${setup.startAt}-${setup.endAt}`} setup={setup} machines={machines} disabled={setupDirty || savingSetup} onSave={async draft => {
+              const saved = await onSaveSetup(setup.id, draft);
+              if (saved) onClose();
+              return saved;
+            }} />;
+          })();
 
   return (
     <Drawer
-      title={isMaintenance && maintenance ? maintenanceTypeLabel(maintenance.type) : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : `Production Schedule #${job?.id}`}
+      title={isMaintenance && maintenance ? maintenanceTypeLabel(maintenance.type) : job?.sourceOrderRefs ? `Order ${job.sourceOrderRefs}` : job?.productName ?? "Production schedule"}
       subtitle={machine ? `${machine.name} · ${machine.machineType}` : undefined}
       onClose={onClose}
       ariaLabel="Schedule detail"
@@ -111,14 +171,14 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             <>
               <div>
                 <p className="mb-1 text-13 text-slate-500">Lock Production</p>
-                <button type="button" role="switch" aria-checked={locked} disabled={!canEdit} onClick={() => setLocked((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${locked ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
+                <button type="button" role="switch" aria-label="Lock Production" aria-checked={locked} disabled={!canEdit || savingOrder} onClick={() => setLocked((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${locked ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
                   <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><LockIcon /></span>
                 </button>
               </div>
 
               <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
                 <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
-                <div><p className="text-13 text-slate-400">Order ID</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
+                <div><p className="text-13 text-slate-400">Order number</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
                 <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
                 <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
                 <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
@@ -131,64 +191,99 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
 
           {isMaintenance && (
             <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
+              {maintenance?.type === MaintenanceType.Setup && onSaveSetup && <div className="col-span-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-900">Edit setup</span>
+                <button type="button" role="switch" aria-label="Edit setup" aria-checked={editingSetup} disabled={savingSetup} onClick={() => {
+                  setEditingSetup(!editingSetup);
+                  setSetupDuration(String((Date.parse(maintenance.endAt) - Date.parse(maintenance.startAt)) / 60000));
+                  setSetupPercentage(maintenance.setupPercentage?.replace(/%$/, "") ?? "");
+                  setSetupReason(maintenance.reason ?? "");
+                }} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${editingSetup ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:opacity-70`}><span className="h-5 w-5 rounded-full bg-white" /></button>
+              </div>}
               <div><p className="text-13 text-slate-400">Machine</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine ? `${machine.name} · ${machine.machineType}` : "-"}</p></div>
               <div><p className="text-13 text-slate-400">Machine code</p><p className="mt-1 text-sm font-semibold text-slate-950">{machine?.lineCode ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Schedule</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType ?? "-"}</p></div>
               <div><p className="text-13 text-slate-400">Frequency</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance?.scheduleType === "Recurring" ? [maintenance.repeatType, maintenance.repeatValue].filter(Boolean).join(" · ") : "One Time"}</p></div>
-              {maintenance?.type === MaintenanceType.Setup && maintenance.setupPercentage && <div><p className="text-13 text-slate-400">Setup percentage</p><p className="mt-1 text-sm font-semibold text-slate-950">{maintenance.setupPercentage}</p></div>}
-              <div className="col-span-2"><p className="text-13 text-slate-400">Reason</p><p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p></div>
+              {maintenance?.type === MaintenanceType.Setup && <>
+                <div><label htmlFor={editingSetup ? "setup-percentage" : undefined} className="block text-13 text-slate-400">Setup percentage</label>{editingSetup ? <input id="setup-percentage" className={`${ui.input} mt-1`} type="number" min="0" step="any" disabled={savingSetup} value={setupPercentage} onChange={e => setSetupPercentage(e.target.value)} /> : <p className="mt-1 text-sm font-semibold text-slate-950">{maintenance.setupPercentage || "Not recorded"}</p>}</div>
+                <div><label htmlFor={editingSetup ? "setup-duration" : undefined} className="block text-13 text-slate-400">Setup duration (minutes)</label>{editingSetup ? <input id="setup-duration" className={`${ui.input} mt-1`} type="number" min="0.01" step="any" disabled={savingSetup} value={setupDuration} onChange={e => setSetupDuration(e.target.value)} /> : <p className="mt-1 text-sm font-semibold text-slate-950">{Number(((Date.parse(maintenance.endAt) - Date.parse(maintenance.startAt)) / 60000).toFixed(2))}</p>}</div>
+              </>}
+              <div className="col-span-2"><label htmlFor={editingSetup ? "setup-reason" : undefined} className="block text-13 text-slate-400">Reason</label>{editingSetup ? <input id="setup-reason" className={`${ui.input} mt-1`} maxLength={500} disabled={savingSetup} value={setupReason} onChange={e => setSetupReason(e.target.value)} /> : <p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p>}</div>
+              {editingSetup && invalidSetup && <p role="alert" className="col-span-2 text-xs text-red-600">Isi durasi lebih dari nol dan persentase nol atau lebih.</p>}
+              {editingSetup && maintenance?.type === MaintenanceType.Setup && onSaveSetup && <div className="col-span-2 flex justify-end"><button type="button" className={ui.btnPrimary} disabled={invalidSetup || savingSetup} onClick={async () => {
+                setSavingSetup(true);
+                try {
+                  const saved = await onSaveSetup(maintenance.id, { ...maintenance, endAt: toJakartaDateTime(Date.parse(maintenance.startAt) + Number(setupDuration) * 60000), setupPercentage: setupPercentage ? `${setupPercentage}%` : undefined, reason: setupReason });
+                  if (saved) onClose();
+                } finally { setSavingSetup(false); }
+              }}>{savingSetup ? "Saving..." : "Save"}</button></div>}
             </div>
           )}
 
-          <div className={`grid gap-2 rounded-lg border-b border-slate-200 bg-white p-4 ${!isMaintenance && canEditSchedule ? "grid-cols-1 sm:grid-cols-[1fr_40px_1fr] sm:items-end" : "grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-end"}`}>
+          {!isMaintenance && canEdit && <div className="flex items-center justify-between px-4">
+            <span className="text-sm font-semibold text-slate-900">Edit schedule</span>
+            <button type="button" role="switch" aria-label="Edit schedule" aria-checked={editingSchedule} disabled={!canEditSchedule || savingOrder} onClick={() => {
+              setEditingSchedule(!editingSchedule);
+              setStartDate(inputDate(job!.startAt)); setStartTime(inputTime(job!.startAt));
+              setEndDate(inputDate(job!.endAt)); setEndTime(inputTime(job!.endAt));
+              setScheduleEdited(false);
+            }} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${editingSchedule ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:opacity-70`}><span className="h-5 w-5 rounded-full bg-white" /></button>
+          </div>}
+          <div className={`grid gap-2 rounded-lg border-b border-slate-200 bg-white p-4 ${!isMaintenance && showScheduleInputs ? "grid-cols-1 sm:grid-cols-[1fr_40px_1fr] sm:items-end" : "grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-end"}`}>
             <div>
               <p className="text-13 text-slate-400">{isMaintenance ? "Start Maintenance" : "Start Production"}</p>
-              {!isMaintenance && canEditSchedule ? (
+              {!isMaintenance && showScheduleInputs ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={startTime} onChange={(event) => { setStartTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" disabled={savingOrder} value={startDate} onChange={(event) => { setStartDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" disabled={savingOrder} value={startTime} onChange={(event) => { setStartTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.startAt ? <DrawerDateTime value={maintenance.startAt} /> : "-") : (job?.startAt ? <DrawerDateTime value={job.startAt} /> : "-")}</p>
               )}
             </div>
-            <span className={`flex items-center justify-self-center self-center text-slate-900 ${!isMaintenance && canEditSchedule ? "rotate-90 sm:h-19 sm:rotate-0" : ""}`}><ArrowIcon /></span>
+            <span className={`flex items-center justify-self-center self-center text-slate-900 ${!isMaintenance && showScheduleInputs ? "rotate-90 sm:h-19 sm:rotate-0" : ""}`}><ArrowIcon /></span>
             <div>
               <p className="text-13 text-slate-400">{isMaintenance ? "End Maintenance" : "End Production"}</p>
-              {!isMaintenance && canEditSchedule ? (
+              {!isMaintenance && showScheduleInputs ? (
                 <div className="mt-2 space-y-2">
-                  <input type="date" value={endDate} onChange={(event) => { setEndDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
-                  <input type="time" value={endTime} onChange={(event) => { setEndTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="date" disabled={savingOrder} value={endDate} onChange={(event) => { setEndDate(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
+                  <input type="time" disabled={savingOrder} value={endTime} onChange={(event) => { setEndTime(event.target.value); setScheduleEdited(true); }} className="w-full rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-950" />
                 </div>
               ) : (
                 <p className="mt-1 text-sm font-semibold text-slate-950">{isMaintenance ? (maintenance?.endAt ? <DrawerDateTime value={maintenance.endAt} /> : "-") : (job?.endAt ? <DrawerDateTime value={job.endAt} /> : "-")}</p>
               )}
             </div>
           </div>
-          {!isMaintenance && invalidSchedule && <p className="-mt-2 border-b border-slate-200 pb-5 text-xs text-red-600">End production harus lebih besar dari start production.</p>}
+          {!isMaintenance && canEdit && onSave && (editingSchedule || locked !== job?.isLocked) && <div className="flex justify-end">
+            <button type="button" className={ui.btnPrimary} disabled={invalidSchedule || savingOrder} onClick={() => void saveOrder("schedule")}>{savingOrder ? "Saving..." : "Save"}</button>
+          </div>}
+          {!isMaintenance && invalidSchedule && <p className="-mt-2 border-b border-slate-200 pb-5 text-xs text-red-600">Waktu selesai produksi harus setelah waktu mulai.</p>}
+          {moveGroup}
 
-          {!isMaintenance && (
-            <div className="rounded-lg bg-slate-50 p-4">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                <span className="text-sm font-semibold text-slate-900">Setup{setupMaintenance?.setupPercentage ? ` · ${setupMaintenance.setupPercentage}` : ""}</span>
-                {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
-              </div>
-              {setupMaintenance ? (
-                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
-                  <TimelinePoint label="Start Setup" value={setupMaintenance.startAt} />
-                  <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
-                  <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
-                </div>
-              ) : <p className="mt-2 text-xs text-slate-500">No setup linked to this order.</p>}
-            </div>
-          )}
 
           {isMaintenance ? (
             <>
-              {(maintenance?.type === MaintenanceType.Setup || maintenance?.type === MaintenanceType.Corrective) && (
+              {maintenance?.type === MaintenanceType.Setup && <div className="rounded-lg bg-slate-50 p-4">
+                {!setupJobs || setupJobs.id !== maintenance.id ? <p role="status" className="mt-2 text-xs text-slate-500">Loading linked orders...</p> : setupJobs.error ?
+                  <div role="alert" className="mt-2 text-xs text-red-600">{setupJobs.error} <button type="button" className={ui.btnSecondary} onClick={() => setReloadSetupJobs(value => value + 1)}>Retry</button></div> :
+                  setupJobs.jobs.length === 0 ? <p className="mt-2 text-xs text-slate-500">No order linked to this setup.</p> :
+                  <div className="divide-y divide-slate-200">{setupJobs.jobs.map((member, index) => <div key={member.id} className="py-3 first:pt-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="min-w-0 text-sm font-semibold text-slate-900">Order {member.sourceOrderRefs || "—"}</p>
+                      {index === 0 && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this maintenance</span>}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">{member.productName}</p>
+                    <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
+                      <TimelinePoint label="Start Production" value={member.startAt} />
+                      <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
+                      <TimelinePoint label="End Production" value={member.endAt} />
+                    </div>
+                  </div>)}</div>}
+              </div>}
+              {maintenance?.type === MaintenanceType.Corrective && (
                 <div className="rounded-lg bg-slate-50 p-4">
                   <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
-                    <span className="text-sm font-semibold text-slate-900">{linkedJob ? `Order ${linkedJob.sourceOrderRefs ?? linkedJob.id}` : "Linked Order"}</span>
+                    <span className="text-sm font-semibold text-slate-900">{linkedJob ? `Order ${linkedJob.sourceOrderRefs || linkedJob.productName}` : "Linked Order"}</span>
                     {linkedJob && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this maintenance</span>}
                   </div>
                   {linkedJob ? (
@@ -223,7 +318,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                 </>
               ) : (
                 <div className="flex items-center gap-3">
-                  <button type="button" role="switch" aria-checked={correctiveMaintenance} disabled={isComplete} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${correctiveMaintenance ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
+                  <button type="button" role="switch" aria-label="Corrective Maintenance" aria-checked={correctiveMaintenance} disabled={isComplete || savingOrder} onClick={() => setCorrectiveMaintenance((value) => !value)} className={`flex h-6 w-12 items-center rounded-full p-0.5 transition-colors ${correctiveMaintenance ? "justify-end bg-brand-600" : "justify-start bg-slate-300"} disabled:cursor-not-allowed disabled:opacity-70`}>
                     <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white text-slate-400"><MaintenanceIcon /></span>
                   </button>
                   <span className="text-sm font-semibold text-slate-900">Corrective Maintenance</span>
@@ -241,22 +336,32 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                   <label className="block text-13 font-semibold text-slate-800">Estimated Time <span className="text-red-500">*</span>
                     <div className="mt-2"><Select value={estimatedHours} onChange={setEstimatedHours} options={[...new Set([2, 4, 6, 8, 24, ...reasons.map((item) => Number(item.estimatedHours))])].sort((a, b) => a - b).map((hours) => ({ value: String(hours), label: `${hours} Hours` }))} /></div>
                   </label>
+                  {onSave && <div className="flex justify-end"><button type="button" className={ui.btnPrimary} disabled={savingOrder || !reason.trim() || !Number.isFinite(Number(estimatedHours)) || Number(estimatedHours) <= 0} onClick={() => void saveOrder("corrective")}>{savingOrder ? "Saving..." : "Save"}</button></div>}
                 </div>
               )}
             </div>
           )}
 
+          {!isMaintenance && (
+            <div className="rounded-lg bg-slate-50 p-4">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                <span className="text-sm font-semibold text-slate-900">Setup</span>
+                {setupMaintenance && <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2 py-0.5 text-2xs font-semibold text-brand-700">Linked to this order</span>}
+              </div>
+              {setupMaintenance && <p className="mt-3 text-xs text-slate-500"><span>Setup percentage</span><span className="ml-2 font-semibold text-slate-950">{setupMaintenance.setupPercentage || "Not recorded"}</span></p>}
+              {setupMaintenance ? (
+                <div className="mt-3 grid grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)] items-center gap-2">
+                  <TimelinePoint label="Start Setup" value={setupMaintenance.startAt} />
+                  <span className="justify-self-center text-slate-500"><ArrowIcon /></span>
+                  <TimelinePoint label="End Setup" value={setupMaintenance.endAt} />
+                </div>
+              ) : <p className="mt-2 text-xs text-slate-500">No setup linked to this order.</p>}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
             <button type="button" className={ui.btnSecondary} onClick={onClose}>Back</button>
-            {canSave && <button type="button" disabled={invalidSchedule} className={ui.btnPrimary} onClick={async () => {
-              const saved = await onSave?.({
-                isLocked: locked,
-                startAt: canEditSchedule && scheduleEdited ? mergeDateTime(startDate, startTime) : undefined,
-                endAt: canEditSchedule && scheduleEdited ? mergeDateTime(endDate, endTime) : undefined,
-                correctiveMaintenance: correctiveMaintenance ? { reason, estimatedHours: Number(estimatedHours) } : undefined,
-              });
-              if (saved !== false) onClose();
-            }}>Save</button>}
+
           </div>
     </Drawer>
   );

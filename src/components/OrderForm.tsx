@@ -42,9 +42,9 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
   });
 
   const save = async () => {
-    if (!draft.customerName.trim()) return setError("Customer is required.");
+    if (!draft.customerName.trim()) return setError("Isi nama customer sebelum menyimpan.");
     if (draft.items.some((line) => !line.description.trim() || line.qty <= 0))
-      return setError("Each item needs a description and quantity greater than zero.");
+      return setError("Isi nama produk dan jumlah lebih dari nol untuk setiap item.");
     setError("");
     setSaving(true);
     const saved = await onSave(draft);
