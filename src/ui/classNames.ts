@@ -50,7 +50,7 @@ export const td = "px-3 py-2.5 text-left border-b border-slate-200";
 export const muted = "text-slate-500 text-sm";
 export const textDanger = "text-red-600 font-semibold";
 
-export const bannerError = "rounded-md border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-800";
+export const bannerError = "whitespace-pre-line rounded-md border border-red-200 bg-red-50 px-3.5 py-2.5 text-sm text-red-800";
 
 export const badgeBase = "inline-block rounded px-2 py-0.5 text-2xs font-semibold";
 export const badgeSo = badgeBase + " bg-green-50 text-green-700";

@@ -20,8 +20,8 @@ export const queueWarning = (message: string) =>
 
 const styles = {
   success: { title: "Changes saved", icon: Check, iconClass: "bg-emerald-50 text-emerald-600" },
-  error: { title: "Unable to complete request", icon: X, iconClass: "bg-red-50 text-red-600" },
-  warning: { title: "Please check", icon: TriangleAlert, iconClass: "bg-amber-50 text-amber-600" },
+  error: { title: "Permintaan belum dapat diproses", icon: X, iconClass: "bg-red-50 text-red-600" },
+  warning: { title: "Periksa kembali", icon: TriangleAlert, iconClass: "bg-amber-50 text-amber-600" },
 };
 
 export function Notification() {
@@ -66,6 +66,10 @@ export function Notification() {
 
   const style = styles[notice.type];
   const Icon = style.icon;
+  const titleEnd = notice.message.indexOf("\n\n");
+  const hasTitle = notice.type !== "success" && titleEnd > 0 && titleEnd <= 90 && !notice.message.slice(0, titleEnd).includes("\n");
+  const messageTitle = hasTitle ? notice.message.slice(0, titleEnd) : style.title;
+  const messageBody = hasTitle ? notice.message.slice(titleEnd + 2) : notice.message;
 
   return (
     <div
@@ -94,8 +98,13 @@ export function Notification() {
         </span>
         <div className="notification-content">
           <div className="notification-copy">
-            <h2 id="notification-title" className="text-xl font-bold tracking-tight text-slate-900">{style.title}</h2>
-            <p id="notification-message" className="mx-auto max-w-[380px] whitespace-pre-line break-words text-sm leading-6 text-slate-500">{notice.message}</p>
+            <h2 id="notification-title" className="text-center text-xl font-bold tracking-tight text-slate-900">{messageTitle}</h2>
+            <div id="notification-message" className="flex flex-col gap-4 break-words text-center text-sm leading-6 text-slate-600">
+              {messageBody.split("\n\n").map((paragraph, index) => <div key={index} className={/^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status)[^:\n]*:/.test(paragraph) ? "rounded-md bg-slate-50 px-4 py-3 text-left" : ""}>{paragraph.split("\n").map((line, lineIndex) => {
+                const label = /^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status)[^:\n]*:/.exec(line);
+                return <span key={lineIndex} className="block">{label ? <><strong className="font-semibold text-slate-800">{label[0]}</strong>{line.slice(label[0].length)}</> : line}</span>;
+              })}</div>)}
+            </div>
           </div>
           <button
             type="button"

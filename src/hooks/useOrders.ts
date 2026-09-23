@@ -88,7 +88,7 @@ const toApi = (order: OrderDraft) => ({
 });
 
 const report = (cause: unknown) =>
-  notify("error", cause instanceof Error ? cause.message : "The request could not be completed. Refresh and check the data before trying again.");
+  notify("error", cause instanceof Error ? cause.message : "Permintaan belum dapat diproses\n\nMuat ulang dan periksa data sebelum mencoba lagi.");
 
 interface OrderQuery {
   page?: number;

@@ -11,7 +11,7 @@ import type {
   ScheduleJob,
   ScheduleJobDraft,
 } from "../types";
-import { toJakartaDateTime } from "../utils/dateFormat";
+import { toJakartaDateTime, formatDateTime } from "../utils/dateFormat";
 import type { OptimizedSchedule } from "../utils/optimization";
 import { normalizeMaintenanceType } from "../utils/optimization";
 
@@ -119,7 +119,7 @@ const jobBody = (job: StoredJob) => ({
 });
 
 const report = (cause: unknown) =>
-  notify("error", cause instanceof Error ? cause.message : "The request could not be completed. Refresh and check the data before trying again.");
+  notify("error", cause instanceof Error ? cause.message : "Permintaan belum dapat diproses\n\nMuat ulang dan periksa data sebelum mencoba lagi.");
 const getAllMaintenance = async () => {
   const first = await api<PagedResult<ApiWindow>>("/maintenance-windows?page=1&pageSize=100");
   const rest = await Promise.all(Array.from({ length: first.totalPages - 1 }, (_, index) =>
@@ -243,6 +243,14 @@ export function useProduction(options: ProductionOptions = {}) {
       report(cause);
       return null;
     }
+  }, []);
+
+  const getSetupJobs = useCallback(async (setup: MaintenanceWindow) => {
+    const rows = await api<ApiJob[]>(`/schedules?${new URLSearchParams({ machineId: setup.machineId })}`);
+    return rows.filter(job => !job.isMaintenance && (String(job.setupMaintenanceId) === setup.id ||
+      String(job.id) === setup.affectedScheduleId || (!job.setupMaintenanceId && !setup.affectedScheduleId &&
+        Date.parse(job.startsAt) === Date.parse(setup.endAt))))
+      .map(jobFromApi).sort((a, b) => Date.parse(a.startAt) - Date.parse(b.startAt));
   }, []);
 
   const getMaintenanceWindow = useCallback(async (id: string) => {
@@ -424,7 +432,7 @@ export function useProduction(options: ProductionOptions = {}) {
 
       const schedules = optimized.orderSchedules.flatMap((result) => {
         const entry = itemsById.get(result.itemId);
-        if (!entry) throw new Error(`Order item #${result.itemId} is no longer available. No changes were applied. Refresh the orders and run Optimize Schedule again.`);
+        if (!entry) throw new Error("Order sudah berubah\n\nItem pada hasil optimasi tidak lagi tersedia. Belum ada perubahan diterapkan. Muat ulang order dan jalankan optimasi kembali.");
         const { order, item } = entry;
         const matched = allJobs.find((job) => job.order?.orderLineId === result.itemId);
         if (matched && protectedScheduleIds.has(matched.id)) {
@@ -432,12 +440,12 @@ export function useProduction(options: ProductionOptions = {}) {
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
             toJakartaDateTime(matched.endsAt) === toJakartaDateTime(result.endAt);
           if (!unchanged) {
-            const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? `Machine ${result.machineId}`;
-            const reason = Date.parse(matched.endsAt) <= now ? "its scheduled production time has already ended"
-              : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "it is paused for corrective maintenance"
-              : Date.parse(matched.startsAt) <= now ? "its scheduled production time has already started"
-              : "it is locked";
-            throw new Error(`Cannot apply this optimization. Schedule #${matched.id} on ${matched.machineLineCode} is protected because ${reason}. The AI result changes its machine or time (proposed machine: ${aiMachine}).\n\nNo changes were applied. Run Optimize Schedule again using the latest schedule. You can reopen this result from the notification to review it.`);
+            const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? "mesin lain";
+            const reason = Date.parse(matched.endsAt) <= now ? "Produksi sudah selesai."
+              : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
+              : Date.parse(matched.startsAt) <= now ? "Produksi sudah berjalan."
+              : "Order masih terkunci.";
+            throw new Error(`Optimasi tidak dapat diterapkan\n\n${reason} Hasil optimasi mengubah mesin atau waktunya.\n\nOrder: ${matched.order?.orderNumber || "—"}\nProduk: ${matched.itemName}\nMesin: ${matched.machineLineCode}\nMulai produksi: ${formatDateTime(matched.startsAt)} WIB\nSelesai produksi: ${formatDateTime(matched.endsAt)} WIB\nTujuan mesin: ${aiMachine}\n\nBelum ada perubahan diterapkan. Jalankan Optimize Schedule kembali menggunakan jadwal terbaru.`);
           }
           return [];
         }
@@ -485,12 +493,12 @@ export function useProduction(options: ProductionOptions = {}) {
         const normalizedType = normalizeMaintenanceType(type);
         const itemIds = Array.isArray(itemId) ? itemId : itemId === undefined ? [] : [itemId];
         if (normalizedType === "Corrective Maintenance") {
-          if (itemIds.length !== 1) throw new Error("The AI result links corrective maintenance to an invalid number of order items. Exactly one is required. No changes were applied. Run Optimize Schedule again.");
+          if (itemIds.length !== 1) throw new Error("Hubungan maintenance tidak sesuai\n\nCorrective maintenance harus terhubung ke tepat satu item order. Jalankan optimasi kembali.");
           const linkedJob = allJobs.find((job) => job.order?.orderLineId === itemIds[0]);
           const previous = linkedJob ? existingMaintenance.find((row) => row.type === "Corrective Maintenance" &&
             row.affectedScheduleId === linkedJob.id && Date.parse(row.endAt) > now) : undefined;
           if (maintenanceId !== undefined && previous?.id !== maintenanceId)
-            throw new Error("The corrective maintenance link has changed. Review the latest schedule before applying.");
+            throw new Error("Hubungan maintenance sudah berubah\n\nMuat ulang dan periksa jadwal terbaru sebelum menerapkan optimasi.");
           return [{
             ...result,
             orderLineId: itemIds[0],
@@ -510,11 +518,11 @@ export function useProduction(options: ProductionOptions = {}) {
             (setupIds.has(row.id) || protectedJobs.some((job) => row.affectedScheduleId === job.id)));
           const entireGroupIsProtected = protectedJobs.length === itemIds.length;
           if (!currentSetup || !entireGroupIsProtected || setupIds.size > 1)
-            throw new Error("This optimization changes a setup group that contains protected production. No changes were applied. Run Optimize Schedule again using the latest schedule.");
+            throw new Error("Grup setup tidak dapat diganti\n\nHasil optimasi mengubah grup dengan produksi yang dilindungi. Belum ada perubahan diterapkan. Jalankan optimasi kembali menggunakan jadwal terbaru.");
           const unchanged = currentSetup.machineId === result.machineId &&
             toJakartaDateTime(currentSetup.startAt) === toJakartaDateTime(result.startAt) &&
             toJakartaDateTime(currentSetup.endAt) === toJakartaDateTime(result.endAt);
-          if (!unchanged) throw new Error(`This optimization moves the setup for protected schedule #${protectedJobs[0].id} on ${protectedJobs[0].machineLineCode}. No changes were applied. Run Optimize Schedule again using the latest schedule.`);
+          if (!unchanged) throw new Error(`Setup tidak dapat dipindahkan\n\nSetup terhubung ke produksi yang dilindungi.\n\nOrder: ${protectedJobs[0].order?.orderNumber || "—"}\nProduk: ${protectedJobs[0].itemName}\nMesin: ${protectedJobs[0].machineLineCode}\nMulai produksi: ${formatDateTime(protectedJobs[0].startsAt)} WIB\n\nBelum ada perubahan diterapkan. Jalankan Optimize Schedule kembali menggunakan jadwal terbaru.`);
           return [];
         }
         const exists = normalizedType !== "Setup Maintenance" && existingMaintenance.some((row) =>
@@ -564,6 +572,7 @@ export function useProduction(options: ProductionOptions = {}) {
     updateJob,
     moveJob,
     getScheduleJob,
+    getSetupJobs,
     getMaintenanceWindow,
     loadOptimizationContext,
     applyOptimizationResponse,

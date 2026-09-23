@@ -39,7 +39,7 @@ export function SchedulePage() {
   const [weekOffset, setWeekOffset] = useState(0);
   const weekStart = useMemo(() => addWibDays(wibStartOfDay(), weekOffset * 7), [weekOffset]);
   const weekEnd = useMemo(() => addWibDays(weekStart, 7), [weekStart]);
-  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, addCorrectiveMaintenance, getScheduleJob, getMaintenanceWindow, loadOptimizationContext, applyOptimizationResponse, isLoading } = useProduction({
+  const { machines, scheduleJobs, maintenanceWindows, moveJob, updateJob, updateMaintenanceWindow, addCorrectiveMaintenance, getScheduleJob, getSetupJobs, getMaintenanceWindow, loadOptimizationContext, applyOptimizationResponse, isLoading } = useProduction({
     machines: { page: 1, pageSize: 100 },
     maintenance: { page: 1, pageSize: 100, startAt: weekStart, endAt: weekEnd },
     schedules: { startAt: weekStart, endAt: weekEnd },
@@ -159,7 +159,7 @@ export function SchedulePage() {
           }];
         });
       });
-      if (optimizable.length === 0) throw new Error("No eligible order items are available for optimization today. Check the import date, delivery date, and schedule status. Locked or started schedules are currently excluded.");
+      if (optimizable.length === 0) throw new Error("Belum ada order yang dapat dioptimasi\n\nPeriksa tanggal import, tanggal pengiriman, dan status produksi. Jadwal terkunci atau sudah mulai tidak disertakan.");
       const payload = {
       machines: activeMachines.map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
       machineHistory: activeMachines.map((machine) => ({
@@ -222,7 +222,7 @@ export function SchedulePage() {
       const { payload } = await buildOptimizeRequest();
       await optimization.start(payload);
     } catch (cause) {
-      notify("error", cause instanceof Error ? cause.message : "AI optimization failed.");
+      notify("error", cause instanceof Error ? cause.message : "Optimasi gagal\n\nCoba jalankan Optimize Schedule kembali.");
     } finally {
       setSubmittingOptimization(false);
     }
@@ -241,10 +241,10 @@ export function SchedulePage() {
         const [detail, orders, context] = await Promise.all([optimization.get(optimizationJobId), loadOrders(), loadOptimizationContext()]);
         if (detail.job.status === "Expired") {
           await optimization.refresh();
-          throw new Error("This optimization has expired and is no longer available to apply. Run Optimize Schedule again using the latest schedule.");
+          throw new Error("Hasil optimasi sudah kedaluwarsa\n\nJalankan Optimize Schedule kembali menggunakan jadwal terbaru.");
         }
-        if (detail.job.status === "Applied") throw new Error("This optimization has already been applied. Refresh the schedule to see the saved changes.");
-        if (!detail.response) throw new Error(detail.job.errorMessage ?? "The optimization result is not ready yet. Wait for the ready notification, then open the review again.");
+        if (detail.job.status === "Applied") throw new Error("Hasil optimasi sudah diterapkan\n\nMuat ulang jadwal untuk melihat perubahan yang tersimpan.");
+        if (!detail.response) throw new Error(detail.job.errorMessage ?? "Hasil optimasi belum siap\n\nTunggu notifikasi selesai, lalu buka review kembali.");
         const candidate = parseOptimizationResponse(detail.response)[0];
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
         const activeCorrectiveScheduleIds = new Set(context.maintenance
@@ -263,7 +263,7 @@ export function SchedulePage() {
         await optimization.refresh().catch(() => undefined);
       } catch (cause) {
         reviewedJobId.current = null;
-        notify("error", cause instanceof Error ? cause.message : "Optimization result could not be opened.");
+        notify("error", cause instanceof Error ? cause.message : "Hasil optimasi tidak dapat dibuka\n\nMuat ulang dan periksa status optimasi.");
       }
     })();
   }, [optimization, optimizationJobId, searchParams, setSearchParams]);
@@ -277,7 +277,7 @@ export function SchedulePage() {
     try {
       if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate)) {
         try { await optimization.markApplied(confirmation.jobId); }
-        catch { notify("warning", "The schedule was saved, but the optimization status could not be updated. Refresh and check the saved schedule before applying this result again."); }
+        catch { notify("warning", "Jadwal tersimpan, status belum diperbarui\n\nMuat ulang dan periksa jadwal yang tersimpan sebelum menerapkan hasil optimasi ini kembali."); }
       }
     } finally {
       setApplyingOptimization(false);
@@ -380,7 +380,10 @@ export function SchedulePage() {
           setupMaintenance={selectedSetupMaintenance}
           linkedCorrectiveMaintenance={selectedCorrectiveMaintenance}
           linkedJob={selectedMaintenanceJob}
+          getSetupJobs={getSetupJobs}
           machine={selectedMachine}
+          machines={machines}
+          onSaveSetup={updateMaintenanceWindow}
           orderRef={selectedJob?.purchaseOrderNumber}
           onSave={selectedJob ? async ({ isLocked, startAt, endAt, correctiveMaintenance }) => {
             if (isLocked !== selectedJob.isLocked || startAt || endAt) {
@@ -413,7 +416,7 @@ export function SchedulePage() {
             <div className="mt-3 grid grid-cols-2 gap-2 pl-11">
               <input aria-label="New start date" type="date" value={moveNotice.editDate} onChange={(event) => setMoveNotice({ ...moveNotice, editDate: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
               <input aria-label="New start time" type="time" value={moveNotice.editTime} onChange={(event) => setMoveNotice({ ...moveNotice, editTime: event.target.value })} className="h-9 rounded-md border border-slate-200 px-2 text-xs" />
-              {invalidEdit && <p role="alert" className="col-span-2 text-xs text-red-600">Production must start after the current time.</p>}
+              {invalidEdit && <p role="alert" className="col-span-2 text-xs text-red-600">Pilih waktu mulai produksi setelah waktu saat ini.</p>}
             </div>
           )}
           <div className="mt-2.5 flex gap-3 pl-11">
