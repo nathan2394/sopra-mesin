@@ -30,7 +30,7 @@ export const segmentedWrap =
 export const segmentedBtn = "rounded px-3.5 py-1.5 text-sm font-semibold text-slate-500 hover:bg-slate-50";
 export const segmentedBtnActive = "bg-brand-600 text-white hover:bg-brand-700";
 
-export const page = "mx-auto w-full max-w-[1440px] px-4 pb-10 pt-4 sm:px-5 lg:px-6";
+export const page = "w-full px-4 pb-10 pt-4 sm:px-5 lg:px-6";
 
 export const filtersRow = "mb-3.5 grid grid-cols-2 items-center gap-2 sm:flex sm:flex-wrap sm:gap-2.5";
 export const searchInput = inputSm + " col-span-2 min-w-0 sm:min-w-[220px] sm:flex-1";
