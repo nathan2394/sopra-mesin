@@ -25,6 +25,7 @@ const GRID_COLS = `${INFO_COLS} minmax(0,55fr)`;
 
 export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, weekEnd, onWeekOffsetChange, isLoading, onSelectJob, onSelectMaintenance, onJobMoved }: Props) {
   const [machineId, setMachineId] = useState("All");
+  const [cavity, setCavity] = useState("All");
   const [search, setSearch] = useState("");
   const [collapsedMachines, setCollapsedMachines] = useState<Set<string>>(new Set());
   const stickySentinelRef = useRef<HTMLDivElement>(null);
@@ -38,15 +39,20 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     return () => observer.disconnect();
   }, []);
   const machineById = useMemo(() => new Map(machines.map((machine) => [machine.id, machine])), [machines]);
+  const cavityOptions = [...new Set(machines.flatMap((machine) => machine.cavity == null ? [] : [machine.cavity]))]
+    .sort((a, b) => a - b);
   const days = Array.from({ length: 7 }, (_, index) => addWibDays(weekStart, index));
   const query = search.trim().toLowerCase();
+  const machineMatches = (id: string) =>
+    (machineId === "All" || id === machineId) &&
+    (cavity === "All" || String(machineById.get(id)?.cavity) === cavity);
   const visibleJobs = jobs.filter((job) =>
-    (machineId === "All" || job.machineId === machineId) &&
+    machineMatches(job.machineId) &&
     new Date(job.endAt) > weekStart && new Date(job.startAt) < weekEnd &&
     (!query || [job.sourceOrderRefs, job.customerName, job.productName, job.itemCode].some((value) => value?.toLowerCase().includes(query)))
   );
   const visibleMaintenance = maintenanceWindows.filter((window) =>
-    (machineId === "All" || window.machineId === machineId) &&
+    machineMatches(window.machineId) &&
     new Date(window.endAt) > weekStart && new Date(window.startAt) < weekEnd &&
     (!query || [window.reason, window.type, machineById.get(window.machineId)?.lineCode].some((value) => value?.toLowerCase().includes(query)))
   );
@@ -80,7 +86,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
     <section className="overflow-visible rounded-xl border border-slate-200 bg-white">
       <div ref={stickySentinelRef} aria-hidden="true" />
       <div className={ui.cx("sticky top-13.25 z-[5] rounded-t-xl bg-white transition-[margin-top,box-shadow] duration-150", isStuck ? "mt-3 shadow-[0_1px_0_rgba(15,23,42,0.06)]" : "mt-0 shadow-none")}>
-        <div className="grid grid-cols-1 gap-3 rounded-t-xl border-b border-slate-200 p-4 lg:grid-cols-[220px_150px_1fr] lg:items-end">
+        <div className="grid grid-cols-1 gap-3 rounded-t-xl border-b border-slate-200 p-4 sm:grid-cols-2 lg:grid-cols-[220px_150px_150px_1fr] lg:items-end">
           <div className="text-2xs font-medium text-slate-500">
             <div>Week</div>
             <div className="mt-1 grid h-9 grid-cols-[32px_minmax(0,1fr)_32px] items-stretch overflow-hidden rounded-md border border-slate-200 bg-white">
@@ -92,7 +98,10 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
           <label className="text-2xs font-medium text-slate-500">Machine
             <div className="mt-1"><Select value={machineId} onChange={setMachineId} options={[{ value: "All", label: "All machines" }, ...machines.map((machine) => ({ value: machine.id, label: machine.lineCode }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
           </label>
-          <label className="justify-self-stretch text-2xs font-medium text-slate-500 lg:w-70 lg:justify-self-end">Search
+          <label className="text-2xs font-medium text-slate-500">Current cavity
+            <div className="mt-1"><Select value={cavity} onChange={setCavity} options={[{ value: "All", label: "All cavities" }, ...cavityOptions.map((value) => ({ value: String(value), label: `Cavity ${value}` }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
+          </label>
+          <label className="justify-self-stretch text-2xs font-medium text-slate-500 sm:col-span-2 lg:col-span-1 lg:w-70 lg:justify-self-end">Search
             <div className="mt-1 flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3"><Search size={14} className="text-slate-400" /><input className="min-w-0 flex-1 border-0 bg-transparent text-xs text-slate-800 outline-none" placeholder="PO# / Customer / Item" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
           </label>
         </div>
@@ -133,10 +142,11 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             const collapsed = collapsedMachines.has(groupMachineId);
             return (
               <div className="contents" key={groupMachineId} data-drop-machine-id={groupMachineId} data-drop-enabled={machine?.isActive === true}>
-                <button type="button" data-machine-heading aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-8 items-center gap-2 border-b border-slate-200 bg-slate-50 px-2 text-left text-2xs font-semibold text-slate-600 hover:bg-slate-100">
+                <button type="button" data-machine-heading aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="col-span-5 flex h-10 items-center gap-2.5 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
                   <ChevronRight size={13} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                  <span>{machine?.lineCode ?? "Unassigned"}</span>
-                  <span className="rounded-full bg-slate-200 px-2 py-0.5 font-medium text-slate-500">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
+                  <span className="truncate">{machine?.lineCode ?? "Unassigned"}</span>
+                  <span className="ml-auto shrink-0 rounded-md border border-slate-300 bg-white px-2.5 py-1 font-medium text-slate-700">Cavity {machine?.cavity ?? "—"}</span>
+                  <span className="shrink-0 rounded-md bg-brand-100 px-3 py-1 font-semibold tabular-nums text-brand-700">{entryCount} {entryCount === 1 ? "entry" : "entries"}</span>
                 </button>
                 {!collapsed && rows.map((row) => row.type === "job" ? (
                   <div className="contents group" key={`job-${row.job.id}`}>
@@ -175,10 +185,11 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
           const collapsed = collapsedMachines.has(groupMachineId);
           return (
             <div key={`agenda-${groupMachineId}`}>
-              <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="flex h-10 w-full items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
+              <button type="button" aria-expanded={!collapsed} onClick={() => toggleMachine(groupMachineId)} className="flex h-11 w-full items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 <ChevronRight size={14} className={`shrink-0 transition-transform ${collapsed ? "" : "rotate-90"}`} />
-                <span className="min-w-0 flex-1 truncate">{machine?.lineCode ?? "Unassigned"}</span>
-                <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-2xs font-medium text-slate-500">{rows.length}</span>
+                <span className="min-w-0 truncate">{machine?.lineCode ?? "Unassigned"}</span>
+                <span className="ml-auto shrink-0 rounded-md border border-slate-300 bg-white px-2 py-1 text-2xs font-medium text-slate-700">Cavity {machine?.cavity ?? "—"}</span>
+                <span className="shrink-0 rounded-md bg-brand-100 px-2.5 py-1 text-2xs font-semibold tabular-nums text-brand-700">{rows.length} {rows.length === 1 ? "entry" : "entries"}</span>
               </button>
               {!collapsed && <div className="divide-y divide-slate-200">
                 {rows.map((row) => row.type === "job" ? (

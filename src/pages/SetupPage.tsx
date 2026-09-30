@@ -3,12 +3,15 @@ import { CalendarDays, LoaderCircle } from "lucide-react";
 import { api } from "../api/client";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate, toJakartaDateTime, wibInputTime } from "../utils/dateFormat";
+import { StatsRow, StatCard } from "../ui/StatCard";
 import * as ui from "../ui/classNames";
 import { setupShift } from "../utils/setupShift";
 
 interface SetupRow {
   id: number;
   machineCode: string;
+  warehouseCode: string;
+  location: string;
   startAt: string;
   endAt: string;
   before: string | null;
@@ -47,17 +50,31 @@ export function SetupPage() {
     return () => { current = false; };
   }, [start, end, retry]);
 
-  const groups = new Map<string, SetupRow[]>();
+  const groups = new Map<string, Map<string, SetupRow[]>>();
   for (const row of rows) {
     const { date } = setupShift(row.startAt);
-    groups.set(date, [...(groups.get(date) ?? []), row]);
+    const locations = groups.get(date) ?? new Map<string, SetupRow[]>();
+    const locationKey = row.warehouseCode || row.location;
+    locations.set(locationKey, [...(locations.get(locationKey) ?? []), row]);
+    groups.set(date, locations);
   }
   const dateLabel = (date: string) => formatDate(`${date}T00:00:00+07:00`);
   const invalidRange = !draft.start || !draft.end || draft.start > draft.end;
+  const shiftOneCount = rows.filter((row) => setupShift(row.startAt).shift === 1).length;
+  const shiftTwoCount = rows.length - shiftOneCount;
+  const locationCount = new Set(rows.map((row) => row.warehouseCode || row.location)).size;
 
   return (
     <div className={ui.page}>
       <PageHeader breadcrumb={[]} title="Setup" subtitle="Product changeovers and setup percentages by machine." />
+
+      <StatsRow>
+        <StatCard value={rows.length} label="Total setups" />
+        <StatCard value={shiftOneCount} label="Shift 1 setups" />
+        <StatCard value={shiftTwoCount} label="Shift 2 setups" />
+        <StatCard value={locationCount} label="Locations" />
+      </StatsRow>
+
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-2 rounded-md bg-brand-50 px-3 py-2 text-xs font-semibold text-brand-600"><CalendarDays size={14} />{dateLabel(start)}{start !== end && ` – ${dateLabel(end)}`}</span>
         <button type="button" aria-pressed={mode === "today"} className={mode === "today" ? ui.btnPrimary : ui.btnSecondary} onClick={() => { setToday(setupShift().date); setMode("today"); setCustomOpen(false); }}>Today</button>
@@ -75,18 +92,23 @@ export function SetupPage() {
       {loading ? <div role="status" className={`${ui.card} flex items-center justify-center gap-2 py-12 text-sm text-slate-500`}><LoaderCircle size={16} className="animate-spin" />Loading setup report...</div>
         : error ? <div role="alert" className={ui.bannerError}>{error} <button className={ui.btnSecondary} onClick={() => setRetry((value) => value + 1)}>Retry</button></div>
         : rows.length === 0 ? <div className={`${ui.card} py-12 text-center text-sm text-slate-500`}>No setups in this date range.</div>
-        : <div className="space-y-4">{[...groups].sort(([a], [b]) => a.localeCompare(b)).map(([date, entries]) => {
-          entries.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+        : <div className="space-y-4">{[...groups].sort(([a], [b]) => a.localeCompare(b)).map(([date, locations]) => {
+          const setupCount = [...locations.values()].reduce((total, entries) => total + entries.length, 0);
           return <section key={date} className={`${ui.tableCard} isolate`} aria-label={`Setup ${date}`}>
-            <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3"><h2 className="text-sm font-semibold text-slate-800">{new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00+07:00`))}</h2><span className={ui.badgeNeutral}>{entries.length} {entries.length === 1 ? "setup" : "setups"}</span></div>
-            <div className="overflow-x-auto"><table className={`${ui.table} min-w-[680px]`}>
-              <thead><tr>{["Shift", "Time (WIB)", "Machine code", "Before", "After", "Percentage"].map((label) => <th key={label} scope="col" className={`${ui.th} ${label === "Percentage" ? "text-right" : label === "Shift" ? "text-center" : ""}`}>{label}</th>)}</tr></thead>
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3"><h2 className="text-sm font-semibold text-slate-800">{new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Jakarta", weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date(`${date}T00:00:00+07:00`))}</h2><span className={ui.badgeNeutral}>{setupCount} {setupCount === 1 ? "setup" : "setups"}</span></div>
+            <div className="divide-y divide-slate-200">{[...locations].sort(([, a], [, b]) => (a[0]?.location || "").localeCompare(b[0]?.location || "")).map(([locationKey, entries]) => {
+              entries.sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+              const location = entries[0]?.location || "Location unavailable";
+              return <div key={locationKey}>
+                <div className="flex items-center justify-between gap-2 bg-slate-50/70 px-4 py-2.5"><h3 className="text-xs font-semibold text-slate-700">{location}</h3><span className="text-xs text-slate-500">{entries.length} {entries.length === 1 ? "setup" : "setups"}</span></div>
+                <div className="overflow-x-auto"><table className={`${ui.table} min-w-[680px]`}>
+              <thead><tr>{["Shift", "Time (WIB)", "Machine code", "Before", "After", "Percentage"].map((label) => <th key={label} scope="col" className={`${ui.th} ${label === "Percentage" ? "text-right" : label === "Shift" ? "!text-center" : ""}`}>{label}</th>)}</tr></thead>
               {[1, 2].map((shift) => {
                 const shiftEntries = entries.filter(row => setupShift(row.startAt).shift === shift);
                 const known = shiftEntries.flatMap(row => row.setupPercentage && /^\d+(\.\d+)?%$/.test(row.setupPercentage) ? [Number(row.setupPercentage.slice(0, -1))] : []);
                 const total = known.reduce((sum, value) => sum + value, 0);
                 return <tbody key={shift}>{shiftEntries.map((row, index) => <tr key={row.id} className="hover:bg-slate-50">
-                {index === 0 && <th scope="rowgroup" rowSpan={shiftEntries.length} className={`${ui.td} text-center align-middle font-semibold text-slate-600`}>{shift}</th>}
+                {index === 0 && <th scope="rowgroup" rowSpan={shiftEntries.length} className={`${ui.td} w-16 !text-center align-middle font-semibold text-slate-600`}>{shift}</th>}
                 <td className={`${ui.td} whitespace-nowrap text-slate-600`}>{wibInputTime(row.startAt)} – {wibInputTime(row.endAt)}</td>
                 <td className={`${ui.td} whitespace-nowrap font-semibold text-slate-700`}>{row.machineCode}</td>
                 <td className={`${ui.td} text-slate-500`}>{row.before || "—"}</td>
@@ -96,7 +118,9 @@ export function SetupPage() {
                 <tr className="border-b border-slate-200 bg-slate-50"><th colSpan={5} scope="row" className="px-3 py-3 text-right font-semibold text-slate-600">Total Shift {shift}{known.length < shiftEntries.length && <span className="ml-2 font-normal text-slate-400">({shiftEntries.length - known.length} without percentage)</span>}</th><td className="px-3 py-3 text-right font-bold text-brand-600">{known.length || !shiftEntries.length ? `${Number(total.toFixed(6))}%` : "—"}</td></tr>
                 </tbody>;
               })}
-            </table></div>
+                </table></div>
+              </div>;
+            })}</div>
           </section>;
         })}</div>}
     </div>

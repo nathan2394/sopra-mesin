@@ -54,10 +54,12 @@
   --color-slate-900: #1d2538;
   --color-slate-950: #121827;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-  --text-3xs: 0.625rem;
-  --text-3xs--line-height: 0.875rem;
-  --text-2xs: 0.6875rem;
+  --text-3xs: 0.6875rem;
+  --text-3xs--line-height: 1rem;
+  --text-2xs: 0.75rem;
   --text-2xs--line-height: 1rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
   --text-13: 0.8125rem;
   --text-13--line-height: 1.125rem;
 }

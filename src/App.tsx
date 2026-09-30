@@ -8,6 +8,7 @@ import { SchedulePage } from "./pages/SchedulePage";
 import { MachinesPage } from "./pages/MachinesPage";
 import { MaintenancePage } from "./pages/MaintenancePage";
 import { SetupPage } from "./pages/SetupPage";
+import { HotRunnerPage } from "./pages/HotRunnerPage";
 import { LoginPage } from "./pages/LoginPage";
 import { Notification } from "./components/Notification";
 
@@ -29,6 +30,7 @@ function App() {
               <Route path="/machines" element={<MachinesPage />} />
               <Route path="/maintenance" element={<MaintenancePage />} />
               <Route path="/setup" element={<SetupPage />} />
+              <Route path="/hot-runner" element={<HotRunnerPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

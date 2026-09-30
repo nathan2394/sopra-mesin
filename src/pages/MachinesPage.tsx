@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
+import { api } from "../api/client";
 import { useProduction } from "../hooks/useProduction";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { PageHeader } from "../components/PageHeader";
@@ -8,13 +9,14 @@ import { StatsRow, StatCard } from "../ui/StatCard";
 import { Select } from "../ui/Select";
 import { DataTable } from "../ui/DataTable";
 import * as ui from "../ui/classNames";
-import type { Machine, MachineDraft } from "../types";
+import type { Machine, MachineDraft, WarehouseOption } from "../types";
 
 export function MachinesPage() {
   const [machinePage, setMachinePage] = useState(1);
   const [machineSearch, setMachineSearch] = useState("");
   const [machineTypeFilter, setMachineTypeFilter] = useState("All");
   const [machineStatusFilter, setMachineStatusFilter] = useState("All");
+  const [warehouses, setWarehouses] = useState<WarehouseOption[]>([]);
   const machineSearchQuery = useDebouncedValue(machineSearch.trim());
   const {
     machines,
@@ -46,6 +48,17 @@ export function MachinesPage() {
     scheduleJobs.forEach((job) => map.set(job.machineId, (map.get(job.machineId) ?? 0) + 1));
     return map;
   }, [scheduleJobs]);
+
+  const warehouseNames = useMemo(
+    () => new Map(warehouses.map((warehouse) => [warehouse.code, warehouse.name])),
+    [warehouses],
+  );
+
+  useEffect(() => {
+    void api<WarehouseOption[]>("/machines/warehouses")
+      .then(setWarehouses)
+      .catch(() => setWarehouses([]));
+  }, []);
 
   useEffect(() => {
     if (machinePagination.totalPages > 0 && machinePage > machinePagination.totalPages) setMachinePage(machinePagination.totalPages);
@@ -91,6 +104,7 @@ export function MachinesPage() {
           { key: "line", header: "Machine code", cell: (machine) => machine.lineCode },
           { key: "name", header: "Name", cell: (machine) => machine.name },
           { key: "type", header: "Type", cell: (machine) => <span className={ui.badgeNeutral}>{machine.machineType}</span> },
+          { key: "warehouse", header: "Warehouse", cell: (machine) => warehouseNames.get(machine.warehouseCode) ?? "—" },
           { key: "cavity", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },

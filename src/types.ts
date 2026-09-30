@@ -39,6 +39,7 @@ export interface Machine {
   lineCode: string;
   name: string;
   machineType: string;
+  warehouseCode: string;
   cavity?: number;
   isActive: boolean;
   createdAt: string;
@@ -46,6 +47,25 @@ export interface Machine {
 }
 
 export type MachineDraft = Omit<Machine, "id" | "cavity" | "createdAt" | "updatedAt">;
+
+export interface WarehouseOption {
+  code: string;
+  name: string;
+}
+
+export interface HotRunner {
+  id: number;
+  cavity: number;
+  machine: string;
+  location: string;
+  warehouseCode: string;
+  machineCodes: string[];
+  stock: number;
+  inUse: number;
+  available: number;
+}
+
+export type HotRunnerDraft = Pick<HotRunner, "machine" | "warehouseCode" | "cavity" | "stock">;
 
 export const MaintenanceType = {
   Preventive: "Preventive Maintenance",
