@@ -23,7 +23,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
   const status = active
     ? { title: "Optimizing schedule", copy: "The result will appear here when it is ready.", Icon: LoaderCircle, color: "text-brand-600", spin: true }
     : job?.status === "Ready"
-      ? { title: "Schedule is ready", copy: "Review the AI result before applying it.", Icon: CheckCircle2, color: "text-emerald-600", spin: false }
+      ? { title: "Schedule is ready", copy: job.errorMessage ?? "Review the AI result before applying it.", Icon: CheckCircle2, color: "text-emerald-600", spin: false }
       : job?.status === "Failed"
         ? { title: "Optimasi gagal", copy: job.errorMessage ?? "Layanan AI belum dapat menyelesaikan optimasi. Coba lagi.", Icon: XCircle, color: "text-red-600", spin: false }
         : optimization.busy

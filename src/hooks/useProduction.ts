@@ -18,8 +18,10 @@ import { normalizeMaintenanceType } from "../utils/optimization";
 type ApiMachine = Omit<Machine, "id"> & { id: number };
 type ApiWindow = Omit<MaintenanceWindow, "id" | "machineId" | "affectedScheduleId"> & { id: number; machineId: number; affectedScheduleId?: number };
 type OptimizationMaintenanceBody = Omit<OptimizedSchedule["maintenanceSchedules"][number], "maintenanceId" | "itemId"> & {
-  itemId?: number[];
+  itemId?: string[];
   orderLineId?: number;
+  bufferId?: number;
+  bufferSequenceNo?: number;
   replacesMaintenanceId?: number;
   scheduleType: string;
 };
@@ -27,6 +29,8 @@ type StoredJob = ScheduleJob & {
   reason?: string;
   purchaseOrderNumber?: string;
   orderLineId?: number;
+  bufferId?: number;
+  bufferSequenceNo?: number;
 };
 
 interface ApiJob {
@@ -50,6 +54,8 @@ interface ApiJob {
   previousStartsAt?: Record<string, string>;
   status: ScheduleJob["status"];
   order?: { orderLineId: number; orderNumber: string; purchaseOrderNumber?: string; customerName?: string; itemCode?: string };
+  bufferId?: number;
+  bufferSequenceNo?: number;
 }
 
 interface ProductionOptions {
@@ -101,7 +107,13 @@ const jobFromApi = (job: ApiJob): StoredJob => ({
   blockingMaintenanceId: job.blockingMaintenanceId ? String(job.blockingMaintenanceId) : undefined,
   blockingMaintenanceReason: job.blockingMaintenanceReason,
   orderLineId: job.order?.orderLineId,
+  bufferId: job.bufferId,
+  bufferSequenceNo: job.bufferSequenceNo,
 });
+
+const itemIdOf = (job: { order?: { orderLineId: number }; bufferId?: number; bufferSequenceNo?: number }) =>
+  job.order ? `O-${job.order.orderLineId}` : job.bufferId && job.bufferSequenceNo
+    ? `B-${job.bufferId}-${job.bufferSequenceNo}` : null;
 
 const jobBody = (job: StoredJob) => ({
   machineId: Number(job.machineId),
@@ -112,10 +124,12 @@ const jobBody = (job: StoredJob) => ({
   quantity: job.qty,
   startsAt: job.startAt,
   endsAt: job.endAt,
-  deliveryDate: job.deliveryDate.slice(0, 10),
+  deliveryDate: job.bufferId ? null : job.deliveryDate.slice(0, 10),
   reason: job.reason,
   status: job.status,
   orderLineId: job.orderLineId,
+  bufferId: job.bufferId,
+  bufferSequenceNo: job.bufferSequenceNo,
 });
 
 const report = (cause: unknown) =>
@@ -418,23 +432,28 @@ export function useProduction(options: ProductionOptions = {}) {
         api<ApiJob[]>("/schedules"),
         getAllMaintenance(),
       ]);
-      const itemsById = new Map(orders.flatMap((order) => order.items.map((item) => [Number(item.id), { order, item }] as const)));
+      const buffers = await api<Array<{ id: number; name: string; qtyBuffer: number; sequenceNo: number }>>("/buffers");
+      const itemsById = new Map<string, { order: Order; item: Order["items"][number] }>(
+        orders.flatMap((order) => order.items.map((item) => [`O-${item.id}`, { order, item }] as const)));
+      const buffersById = new Map<string, typeof buffers[number]>(
+        buffers.map((buffer) => [`B-${buffer.id}-${buffer.sequenceNo}`, buffer] as const));
       const now = Date.now();
       const activeCorrectiveScheduleIds = new Set(existingMaintenance
         .filter((row) => row.type === "Corrective Maintenance" && row.affectedScheduleId && Date.parse(row.endAt) > now)
         .map((row) => Number(row.affectedScheduleId)));
       const protectedJobsByItemId = new Map(allJobs
-        .filter((job) => job.order && (job.isLocked || job.status !== "Open" || Date.parse(job.startsAt) <= now || activeCorrectiveScheduleIds.has(job.id)))
-        .map((job) => [job.order!.orderLineId, job] as const));
+        .filter((job) => itemIdOf(job) && (job.isLocked || job.status !== "Open" || Date.parse(job.startsAt) <= now || activeCorrectiveScheduleIds.has(job.id)))
+        .map((job) => [itemIdOf(job)!, job] as const));
       const protectedScheduleIds = new Set([...protectedJobsByItemId.values()].map((job) => job.id));
       const returnedItemIds = new Set(optimized.orderSchedules.map((row) => row.itemId));
+      const hasBufferResult = optimized.orderSchedules.some((row) => row.itemId.startsWith("B-"));
       const claimedScheduleIds = new Set<number>();
 
       const schedules = optimized.orderSchedules.flatMap((result) => {
         const entry = itemsById.get(result.itemId);
-        if (!entry) throw new Error("Order sudah berubah\n\nItem pada hasil optimasi tidak lagi tersedia. Belum ada perubahan diterapkan. Muat ulang order dan jalankan optimasi kembali.");
-        const { order, item } = entry;
-        const matched = allJobs.find((job) => job.order?.orderLineId === result.itemId);
+        const buffer = buffersById.get(result.itemId);
+        if (!entry && !buffer) throw new Error("Item sudah berubah\n\nItem pada hasil optimasi tidak lagi tersedia. Muat ulang data dan jalankan optimasi kembali.");
+        const matched = allJobs.find((job) => itemIdOf(job) === result.itemId);
         if (matched && protectedScheduleIds.has(matched.id)) {
           const unchanged = matched.machineId === result.machineId &&
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
@@ -455,16 +474,18 @@ export function useProduction(options: ProductionOptions = {}) {
         const body = {
           machineId: result.machineId,
           isLocked: current?.isLocked ?? false,
-          itemName: item.description,
+          itemName: entry?.item.description ?? buffer!.name,
           preform: result.preform,
           cavity: result.cavity,
           quantity: result.quantity,
           startsAt: result.startAt,
           endsAt: result.endAt,
-          deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
+          deliveryDate: entry?.order.deliveryDate ? entry.order.deliveryDate.slice(0, 10) : null,
           reason: current?.reason,
           status: current?.status ?? "Open",
-          orderLineId: result.itemId,
+          orderLineId: entry ? Number(entry.item.id) : null,
+          bufferId: buffer?.id ?? null,
+          bufferSequenceNo: buffer?.sequenceNo ?? null,
         };
         return [{ id: scheduleId, ...body }];
       });
@@ -472,11 +493,11 @@ export function useProduction(options: ProductionOptions = {}) {
       const replaceableScheduleIds = new Set(allJobs.filter((job) =>
         !job.isMaintenance &&
         !protectedScheduleIds.has(job.id) &&
-        job.order
+        (job.order || hasBufferResult && job.bufferId)
       ).map((job) => job.id));
       const deleteScheduleIds = allJobs.filter((job) =>
         replaceableScheduleIds.has(job.id) &&
-        job.order && !returnedItemIds.has(job.order.orderLineId)
+        itemIdOf(job) && !returnedItemIds.has(itemIdOf(job)!)
       ).map((job) => job.id);
       const replaceableSetupIds = new Set(allJobs.filter((job) =>
         replaceableScheduleIds.has(job.id) && job.setupMaintenanceId
@@ -494,14 +515,18 @@ export function useProduction(options: ProductionOptions = {}) {
         const itemIds = Array.isArray(itemId) ? itemId : itemId === undefined ? [] : [itemId];
         if (normalizedType === "Corrective Maintenance") {
           if (itemIds.length !== 1) throw new Error("Hubungan maintenance tidak sesuai\n\nCorrective maintenance harus terhubung ke tepat satu item order. Jalankan optimasi kembali.");
-          const linkedJob = allJobs.find((job) => job.order?.orderLineId === itemIds[0]);
+          const linkedJob = allJobs.find((job) => itemIdOf(job) === itemIds[0]);
           const previous = linkedJob ? existingMaintenance.find((row) => row.type === "Corrective Maintenance" &&
             row.affectedScheduleId === linkedJob.id && Date.parse(row.endAt) > now) : undefined;
           if (maintenanceId !== undefined && previous?.id !== maintenanceId)
             throw new Error("Hubungan maintenance sudah berubah\n\nMuat ulang dan periksa jadwal terbaru sebelum menerapkan optimasi.");
+          const orderMatch = /^O-(\d+)$/.exec(itemIds[0]);
+          const bufferMatch = /^B-(\d+)-(\d+)$/.exec(itemIds[0]);
           return [{
             ...result,
-            orderLineId: itemIds[0],
+            orderLineId: orderMatch ? Number(orderMatch[1]) : undefined,
+            bufferId: bufferMatch ? Number(bufferMatch[1]) : undefined,
+            bufferSequenceNo: bufferMatch ? Number(bufferMatch[2]) : undefined,
             replacesMaintenanceId: previous?.id,
             type: normalizedType,
             reason: result.reason || previous?.reason || "AI schedule optimization",
