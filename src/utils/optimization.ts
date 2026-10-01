@@ -1,6 +1,6 @@
 export interface OptimizedSchedule {
   orderSchedules: Array<{
-    itemId: number;
+    itemId: string;
     machineId: number;
     preform: string;
     cavity: number;
@@ -10,7 +10,7 @@ export interface OptimizedSchedule {
   }>;
   maintenanceSchedules: Array<{
     maintenanceId?: number;
-    itemId?: number | number[];
+    itemId?: string | string[];
     setupPercentage?: string;
     reason?: string;
     type: string;
@@ -22,6 +22,8 @@ export interface OptimizedSchedule {
 
 const isDate = (value: unknown) => typeof value === "string" && !Number.isNaN(Date.parse(value));
 const isId = (value: unknown) => Number.isInteger(value) && Number(value) > 0;
+const isItemId = (value: unknown) => typeof value === "string" &&
+  (/^O-[1-9]\d*$/.test(value) || /^B-[1-9]\d*-[1-9]\d*$/.test(value));
 
 export function normalizeMaintenanceType(type: string): string {
   const name = type.trim().replace(/\s+maintenance$/i, "").toLowerCase();
@@ -37,14 +39,14 @@ export function parseOptimizationResponse(value: unknown): OptimizedSchedule[] {
     const { orderSchedules, maintenanceSchedules } = candidate as Partial<OptimizedSchedule>;
     if (!Array.isArray(orderSchedules) || !Array.isArray(maintenanceSchedules)) throw new Error("Hasil optimasi tidak lengkap\n\nData produksi atau maintenance belum tersedia. Jalankan Optimize Schedule kembali.");
     if (!orderSchedules.length && !maintenanceSchedules.length) throw new Error("Hasil optimasi kosong\n\nTidak ada jadwal produksi atau maintenance. Jalankan Optimize Schedule kembali.");
-    if (!orderSchedules.every((row) => isId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
+    if (!orderSchedules.every((row) => isItemId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
       throw new Error("Data produksi hasil optimasi tidak sesuai\n\nJalankan Optimize Schedule kembali.");
     }
     if (!maintenanceSchedules.every((row) => {
       if (typeof row?.type !== "string") return false;
       const type = normalizeMaintenanceType(row.type);
       const itemIds = Array.isArray(row.itemId) ? row.itemId : row.itemId === undefined ? [] : [row.itemId];
-      const itemIdsAreValid = itemIds.every(isId) && new Set(itemIds).size === itemIds.length;
+      const itemIdsAreValid = itemIds.every(isItemId) && new Set(itemIds).size === itemIds.length;
       const linkedItemsAreValid = type === "Setup Maintenance" ? Array.isArray(row.itemId) && itemIds.length > 0
         : type === "Corrective Maintenance" ? itemIds.length === 1 : true;
       const percentageIsValid = row.setupPercentage === undefined || typeof row.setupPercentage === "string" &&

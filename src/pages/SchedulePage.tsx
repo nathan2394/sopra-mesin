@@ -6,6 +6,7 @@ import { notify } from "../components/Notification";
 import { ScheduleDetailDrawer } from "../components/ScheduleDetailDrawer";
 import { ScheduleGrid } from "../components/ScheduleGrid";
 import { getOrderPage } from "../hooks/useOrders";
+import { api } from "../api/client";
 import { useProduction } from "../hooks/useProduction";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
 import { JobStatus, MaintenanceType } from "../types";
@@ -122,9 +123,10 @@ export function SchedulePage() {
   };
 
   const buildOptimizeRequest = async () => {
-      const [orders, context] = await Promise.all([
+      const [orders, context, buffers] = await Promise.all([
         loadOrders(),
         loadOptimizationContext(),
+        api<Array<{ id: number; name: string; qtyBuffer: number; sequenceNo: number; lastFetchedAt: string }>>("/buffers"),
       ]);
       const now = Date.now();
       const today = jakartaDate(now);
@@ -139,13 +141,13 @@ export function SchedulePage() {
         if (order.deliveryDate && (!Number.isFinite(deliveryAt) || deliveryAt <= now)) return [];
         return order.items.flatMap((item) => {
           if (!item.importedAt || jakartaDate(item.importedAt) !== today) return [];
-          const itemId = Number(item.id);
-          const job = context.jobs.find((row) => row.orderLineId === itemId);
+          const orderLineId = Number(item.id);
+          const job = context.jobs.find((row) => row.orderLineId === orderLineId);
           if (job && (job.isLocked || job.status !== JobStatus.Open || Date.parse(job.endAt) <= now)) return [];
           return [{
             orderId: Number(order.id),
             orderNumber: order.orderNo,
-            itemId,
+            itemId: `O-${orderLineId}`,
             source: order.sourceType,
             scheduleId: job?.id ?? null,
             machineId: job?.machineId ?? null,
@@ -159,7 +161,26 @@ export function SchedulePage() {
           }];
         });
       });
-      if (optimizable.length === 0) throw new Error("Belum ada order yang dapat dioptimasi\n\nPeriksa tanggal import, tanggal pengiriman, dan status produksi. Jadwal terkunci atau sudah mulai tidak disertakan.");
+      const optimizableBuffers = buffers.flatMap((buffer) => {
+        const job = context.jobs.find((row) => row.bufferId === buffer.id && row.bufferSequenceNo === buffer.sequenceNo);
+        if (job && (job.isLocked || job.status !== JobStatus.Open || Date.parse(job.endAt) <= now)) return [];
+        return [{
+          orderId: null,
+          orderNumber: null,
+          itemId: `B-${buffer.id}-${buffer.sequenceNo}`,
+          source: "Buffer",
+          scheduleId: job?.id ?? null,
+          machineId: job?.machineId ?? null,
+          itemName: buffer.name,
+          quantity: buffer.qtyBuffer,
+          durationMinutes: job ? Math.round((Date.parse(job.endAt) - Date.parse(job.startAt)) / 60_000) : null,
+          deliveryDate: null,
+          status: job?.status ?? JobStatus.Open,
+          startAt: job ? toJakartaDateTime(job.startAt) : null,
+          endAt: job ? toJakartaDateTime(job.endAt) : null,
+        }];
+      });
+      if (optimizable.length + optimizableBuffers.length === 0) throw new Error("Belum ada item yang dapat dioptimasi\n\nPeriksa tanggal import dan status produksi. Jadwal terkunci atau sudah mulai tidak disertakan.");
       const payload = {
       machines: activeMachines.map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
       machineHistory: activeMachines.map((machine) => ({
@@ -170,7 +191,7 @@ export function SchedulePage() {
           .sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt))
           .map((job) => ({
             scheduleId: Number(job.id),
-            itemId: job.orderLineId,
+            itemId: job.orderLineId ? `O-${job.orderLineId}` : job.bufferId ? `B-${job.bufferId}-${job.bufferSequenceNo}` : null,
             orderNumber: job.sourceOrderRefs ?? null,
             itemCode: job.itemCode ?? null,
             itemName: job.productName,
@@ -182,13 +203,13 @@ export function SchedulePage() {
             status: job.status,
           })),
       })),
-      orders: optimizable,
+      orders: [...optimizable, ...optimizableBuffers],
       blockedSlots: context.jobs.filter(isBlocked).map((job) => {
         const order = orders.find((row) => job.sourceOrderRefs === row.orderNo);
         return {
           scheduleId: job.id,
           orderId: order ? Number(order.id) : null,
-          itemId: job.orderLineId,
+          itemId: job.orderLineId ? `O-${job.orderLineId}` : job.bufferId ? `B-${job.bufferId}-${job.bufferSequenceNo}` : null,
           machineId: job.machineId,
           preform: job.preform ?? null,
           cavity: job.cavity ?? null,
@@ -203,7 +224,10 @@ export function SchedulePage() {
         maintenanceId: window.id,
         machineId: window.machineId,
         ...(window.type === MaintenanceType.Corrective ? {
-          itemId: context.jobs.find((job) => job.id === window.affectedScheduleId)?.orderLineId ?? null,
+          itemId: (() => {
+            const job = context.jobs.find((row) => row.id === window.affectedScheduleId);
+            return job?.orderLineId ? `O-${job.orderLineId}` : job?.bufferId ? `B-${job.bufferId}-${job.bufferSequenceNo}` : null;
+          })(),
         } : {}),
         startAt: toJakartaDateTime(window.startAt),
         endAt: toJakartaDateTime(window.endAt),
@@ -247,12 +271,13 @@ export function SchedulePage() {
         if (!detail.response) throw new Error(detail.job.errorMessage ?? "Hasil optimasi belum siap\n\nTunggu notifikasi selesai, lalu buka review kembali.");
         const candidate = parseOptimizationResponse(detail.response)[0];
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
+        const hasBufferResult = candidate.orderSchedules.some((row) => row.itemId.startsWith("B-"));
         const activeCorrectiveScheduleIds = new Set(context.maintenance
           .filter((window) => window.type === MaintenanceType.Corrective && window.affectedScheduleId && Date.parse(window.endAt) > Date.now())
           .map((window) => window.affectedScheduleId));
         const deleteCount = context.jobs.filter((job) =>
-          job.orderLineId && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
-          !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId)
+          (job.orderLineId || hasBufferResult && job.bufferId) && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
+          !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId ? `O-${job.orderLineId}` : `B-${job.bufferId}-${job.bufferSequenceNo}`)
         ).length;
         setOptimizationConfirmation({
           jobId: optimizationJobId,
