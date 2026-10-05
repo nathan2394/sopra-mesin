@@ -41,12 +41,13 @@ export interface Machine {
   machineType: string;
   warehouseCode: string;
   cavity?: number;
+  hasSchedule: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export type MachineDraft = Omit<Machine, "id" | "cavity" | "createdAt" | "updatedAt">;
+export type MachineDraft = Omit<Machine, "id" | "cavity" | "hasSchedule" | "createdAt" | "updatedAt">;
 
 export interface WarehouseOption {
   code: string;
@@ -118,6 +119,7 @@ export interface ScheduleJob {
   blockingMaintenanceId?: string;
   blockingMaintenanceReason?: string;
   customerName?: string;
+  bufferId?: number;
   profile?: string;
   itemCode?: string;
   shift?: string;

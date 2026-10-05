@@ -108,7 +108,17 @@ export function MachinesPage() {
           { key: "cavity", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
-          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (machine) => <><button className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button><button className={ui.btnLinkDanger} onClick={() => { const jobCount = jobsByMachine.get(machine.id) ?? 0; const warning = jobCount > 0 ? ` This also removes ${jobCount} scheduled job(s) on it.` : ""; if (window.confirm(`Delete machine ${machine.lineCode}?${warning}`)) void removeMachine(machine.id); }}>Delete</button></> },
+          {
+            key: "actions",
+            header: "",
+            className: "text-right whitespace-nowrap",
+            cell: (machine) => machine.hasSchedule ? null : <>
+              <button type="button" className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button>
+              <button type="button" className={ui.btnLinkDanger} onClick={() => {
+                if (window.confirm(`Delete machine ${machine.lineCode}?`)) void removeMachine(machine.id);
+              }}>Delete</button>
+            </>,
+          },
         ]}
         pagination={{ ...machinePagination, onPageChange: setMachinePage, label: "Machines" }}
         isLoading={isLoading}

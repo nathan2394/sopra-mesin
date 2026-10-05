@@ -83,6 +83,10 @@ export function MachineForm({ initial, onSave, onCancel }: Props) {
       setError("Isi kode, nama, jenis mesin, dan warehouse sebelum menyimpan.");
       return;
     }
+    if (!/^[A-Za-z0-9-]+$/.test(draft.lineCode)) {
+      setError("Kode mesin hanya boleh berisi huruf, angka, dan tanda -.");
+      return;
+    }
     setError(null);
     onSave(draft);
   };
@@ -96,8 +100,16 @@ export function MachineForm({ initial, onSave, onCancel }: Props) {
             className={ui.input}
             placeholder="P1-AK-7"
             value={draft.lineCode}
+            maxLength={30}
             onChange={(event) => {
               const lineCode = event.target.value;
+              const deleting = (event.nativeEvent as InputEvent).inputType?.startsWith("delete")
+                && lineCode.length < draft.lineCode.length;
+              if (!/^[A-Za-z0-9-]*$/.test(lineCode) && !deleting) {
+                setError("Kode mesin hanya boleh berisi huruf, angka, dan tanda -.");
+                return;
+              }
+              setError(null);
 
               setDraft((current) => ({
                 ...current,

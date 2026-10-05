@@ -211,7 +211,7 @@ export function useProduction(options: ProductionOptions = {}) {
     }
   }, [loadMachineOptions]);
 
-  const refreshMaintenance = useCallback(async (silent = false) => {
+  const refreshMaintenance = useCallback(async (silent = false, propagateError = false) => {
     if (!loadMaintenance) return;
     if (!silent) setMaintenanceLoading(true);
     try {
@@ -228,13 +228,14 @@ export function useProduction(options: ProductionOptions = {}) {
       setMaintenancePagination({ page: rows.page, pageSize: rows.pageSize, totalItems: rows.totalItems, totalPages: rows.totalPages });
       if (rows.summary) setMaintenanceSummary(rows.summary);
     } catch (cause) {
+      if (propagateError) throw cause;
       report(cause);
     } finally {
       if (!silent) setMaintenanceLoading(false);
     }
   }, [loadMaintenance, maintenanceEndAt, maintenanceMachineId, maintenancePage, maintenancePageSize, maintenanceScheduleType, maintenanceSearch, maintenanceStartAt, maintenanceType, excludeSetup]);
 
-  const refreshSchedules = useCallback(async (silent = false) => {
+  const refreshSchedules = useCallback(async (silent = false, propagateError = false) => {
     if (!loadSchedules) return;
     if (!silent) setSchedulesLoading(true);
     try {
@@ -244,6 +245,7 @@ export function useProduction(options: ProductionOptions = {}) {
       const rows = await api<ApiJob[]>(`/schedules${query.size ? `?${query}` : ""}`);
       setScheduleJobs(rows.filter((job) => !job.isMaintenance).map(jobFromApi));
     } catch (cause) {
+      if (propagateError) throw cause;
       report(cause);
     } finally {
       if (!silent) setSchedulesLoading(false);
@@ -426,7 +428,7 @@ export function useProduction(options: ProductionOptions = {}) {
     };
   }, []);
 
-  const applyOptimizationResponse = useCallback(async (orders: Order[], optimized: OptimizedSchedule) => {
+  const applyOptimizationResponse = useCallback(async (jobId: number, orders: Order[], optimized: OptimizedSchedule) => {
     try {
       const [allJobs, existingMaintenance] = await Promise.all([
         api<ApiJob[]>("/schedules"),
@@ -442,10 +444,26 @@ export function useProduction(options: ProductionOptions = {}) {
         .filter((row) => row.type === "Corrective Maintenance" && row.affectedScheduleId && Date.parse(row.endAt) > now)
         .map((row) => Number(row.affectedScheduleId)));
       const protectedJobsByItemId = new Map(allJobs
-        .filter((job) => itemIdOf(job) && (job.isLocked || job.status !== "Open" || Date.parse(job.startsAt) <= now || activeCorrectiveScheduleIds.has(job.id)))
+        .filter((job) => itemIdOf(job) && (Date.parse(job.startsAt) <= now ||
+          job.status !== "Open" && !(job.status === "Production Pending" && activeCorrectiveScheduleIds.has(job.id))))
         .map((job) => [itemIdOf(job)!, job] as const));
       const protectedScheduleIds = new Set([...protectedJobsByItemId.values()].map((job) => job.id));
       const returnedItemIds = new Set(optimized.orderSchedules.map((row) => row.itemId));
+      const incompletePending = allJobs.find((job) => {
+        if (job.status !== "Production Pending" || protectedScheduleIds.has(job.id)) return false;
+        const itemId = itemIdOf(job);
+        const production = optimized.orderSchedules.find((row) => row.itemId === itemId);
+        const corrective = optimized.maintenanceSchedules.filter((row) =>
+          normalizeMaintenanceType(row.type) === "Corrective Maintenance" &&
+          (Array.isArray(row.itemId) ? row.itemId.length === 1 && row.itemId[0] === itemId : row.itemId === itemId));
+        return !production || corrective.length !== 1 || corrective[0].machineId !== production.machineId;
+      });
+      if (incompletePending) throw new Error(
+        `Jadwal tertahan tidak lengkap\n\nAI harus mengembalikan produksi dan corrective maintenance untuk ${incompletePending.itemName} di ${incompletePending.machineLineCode}. Keduanya harus terhubung ke order yang sama dan memakai mesin yang sama. Tidak ada jadwal yang diterapkan.`);
+      const missingLocked = allJobs.find((job) => job.isLocked && !protectedScheduleIds.has(job.id) &&
+        itemIdOf(job) && !returnedItemIds.has(itemIdOf(job)!));
+      if (missingLocked) throw new Error(
+        `Jadwal terkunci tidak lengkap\n\nAI tidak mengembalikan jadwal terkunci untuk ${missingLocked.itemName} di ${missingLocked.machineLineCode}. Hasil optimasi tidak diterapkan. Jalankan Optimize Schedule kembali.`);
       const hasBufferResult = optimized.orderSchedules.some((row) => row.itemId.startsWith("B-"));
       const claimedScheduleIds = new Set<number>();
 
@@ -457,14 +475,16 @@ export function useProduction(options: ProductionOptions = {}) {
         if (matched && protectedScheduleIds.has(matched.id)) {
           const unchanged = matched.machineId === result.machineId &&
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
-            toJakartaDateTime(matched.endsAt) === toJakartaDateTime(result.endAt);
+            toJakartaDateTime(matched.endsAt) === toJakartaDateTime(result.endAt) &&
+            (matched.preform ?? "") === result.preform && matched.cavity === result.cavity &&
+            Number(matched.quantity) === result.quantity;
           if (!unchanged) {
             const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? "mesin lain";
-            const reason = Date.parse(matched.endsAt) <= now ? "Produksi sudah selesai."
+            const reason = Date.parse(matched.endsAt) <= now ? "Produksi sudah selesai dan menjadi riwayat."
+              : Date.parse(matched.startsAt) <= now ? "Produksi sedang berjalan."
               : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
-              : Date.parse(matched.startsAt) <= now ? "Produksi sudah berjalan."
-              : "Order masih terkunci.";
-            throw new Error(`Optimasi tidak dapat diterapkan\n\n${reason} Hasil optimasi mengubah mesin atau waktunya.\n\nOrder: ${matched.order?.orderNumber || "—"}\nProduk: ${matched.itemName}\nMesin: ${matched.machineLineCode}\nMulai produksi: ${formatDateTime(matched.startsAt)} WIB\nSelesai produksi: ${formatDateTime(matched.endsAt)} WIB\nTujuan mesin: ${aiMachine}\n\nBelum ada perubahan diterapkan. Jalankan Optimize Schedule kembali menggunakan jadwal terbaru.`);
+              : "Status produksi belum memungkinkan perubahan.";
+            throw new Error(`Jadwal yang dilindungi tidak boleh berubah\n\n${reason} AI mengubah mesin, waktu, atau detail produksinya.\n\nOrder: ${matched.order?.orderNumber || "—"}\nProduk: ${matched.itemName}\nMesin saat ini: ${matched.machineLineCode}\nMulai: ${formatDateTime(matched.startsAt)} WIB\nSelesai: ${formatDateTime(matched.endsAt)} WIB\nMesin dari AI: ${aiMachine}\n\nTidak ada jadwal yang diterapkan. Jalankan Optimize Schedule kembali.`);
           }
           return [];
         }
@@ -482,7 +502,7 @@ export function useProduction(options: ProductionOptions = {}) {
           endsAt: result.endAt,
           deliveryDate: entry?.order.deliveryDate ? entry.order.deliveryDate.slice(0, 10) : null,
           reason: current?.reason,
-          status: current?.status ?? "Open",
+          status: current?.status === "Production Pending" ? "Open" : current?.status ?? "Open",
           orderLineId: entry ? Number(entry.item.id) : null,
           bufferId: buffer?.id ?? null,
           bufferSequenceNo: buffer?.sequenceNo ?? null,
@@ -520,6 +540,13 @@ export function useProduction(options: ProductionOptions = {}) {
             row.affectedScheduleId === linkedJob.id && Date.parse(row.endAt) > now) : undefined;
           if (maintenanceId !== undefined && previous?.id !== maintenanceId)
             throw new Error("Hubungan maintenance sudah berubah\n\nMuat ulang dan periksa jadwal terbaru sebelum menerapkan optimasi.");
+          if (previous && Date.parse(previous.startAt) <= now) {
+            if (previous.machineId !== result.machineId ||
+              toJakartaDateTime(previous.startAt) !== toJakartaDateTime(result.startAt) ||
+              toJakartaDateTime(previous.endAt) !== toJakartaDateTime(result.endAt))
+              throw new Error("Corrective maintenance sudah berjalan\n\nAI mengubah maintenance yang sudah mulai. Tidak ada jadwal yang diterapkan; jalankan optimasi ulang.");
+            return [];
+          }
           const orderMatch = /^O-(\d+)$/.exec(itemIds[0]);
           const bufferMatch = /^B-(\d+)-(\d+)$/.exec(itemIds[0]);
           return [{
@@ -561,18 +588,28 @@ export function useProduction(options: ProductionOptions = {}) {
           scheduleType: "One Time",
         }];
       });
-      await api<object>("/schedules/bulk-optimization", {
-        method: "POST",
-        body: JSON.stringify({
-          schedules,
-          deleteScheduleIds,
-          deleteMaintenanceIds: replacedSetup.map((row) => row.id),
-          maintenanceSchedules: maintenance,
-        }),
-      });
+      try {
+        await api<object>("/schedules/bulk-optimization", {
+          method: "POST",
+          body: JSON.stringify({
+            jobId,
+            schedules,
+            deleteScheduleIds,
+            deleteMaintenanceIds: replacedSetup.map((row) => row.id),
+            maintenanceSchedules: maintenance,
+          }),
+        });
+      } catch (cause) {
+        const detail = await api<{ job: { status: string } }>(`/schedule-optimizations/${jobId}`).catch(() => null);
+        if (detail?.job.status !== "Applied") throw cause;
+      }
 
-      await Promise.all([refreshSchedules(), refreshMaintenance()]);
-      notify("success", `Optimization applied: ${schedules.length} items, ${deleteScheduleIds.length} schedules removed, and ${maintenance.length} maintenance windows.`);
+      try {
+        await Promise.all([refreshSchedules(false, true), refreshMaintenance(false, true)]);
+        notify("success", `Optimization applied: ${schedules.length} items, ${deleteScheduleIds.length} schedules removed, and ${maintenance.length} maintenance windows.`);
+      } catch {
+        notify("warning", "Jadwal tersimpan, tampilan belum diperbarui\n\nMuat ulang halaman untuk melihat jadwal terbaru.");
+      }
       return true;
     } catch (cause) { report(cause); return false; }
   }, [refreshMaintenance, refreshSchedules]);
