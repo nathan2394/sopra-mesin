@@ -160,8 +160,12 @@ export function SchedulePage() {
         const activeCorrectiveScheduleIds = new Set(context.maintenance
           .filter((window) => window.type === MaintenanceType.Corrective && window.affectedScheduleId && Date.parse(window.endAt) > Date.now())
           .map((window) => window.affectedScheduleId));
+        const startedSetupIds = new Set(context.jobs
+          .filter((job) => job.setupMaintenanceId && Date.parse(job.startAt) <= Date.now())
+          .map((job) => job.setupMaintenanceId));
         const deleteCount = context.jobs.filter((job) =>
           (job.orderLineId || hasBufferResult && job.bufferId) && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
+          !startedSetupIds.has(job.setupMaintenanceId) &&
           !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId ? `O-${job.orderLineId}` : `B-${job.bufferId}-${job.bufferSequenceNo}`)
         ).length;
         setOptimizationConfirmation({
