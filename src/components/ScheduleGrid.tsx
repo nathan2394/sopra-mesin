@@ -101,7 +101,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
           <label className="text-2xs font-medium text-slate-500">Current cavity
             <div className="mt-1"><Select value={cavity} onChange={setCavity} options={[{ value: "All", label: "All cavities" }, ...cavityOptions.map((value) => ({ value: String(value), label: `Cavity ${value}` }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
           </label>
-          <label className="justify-self-stretch text-2xs font-medium text-slate-500 sm:col-span-2 lg:col-span-1 lg:w-70 lg:justify-self-end">Search
+          <label className="min-w-0 text-2xs font-medium text-slate-500 sm:col-span-2 lg:col-span-1">Search
             <div className="mt-1 flex h-9 items-center gap-2 rounded-md border border-slate-200 px-3"><Search size={14} className="text-slate-400" /><input className="min-w-0 flex-1 border-0 bg-transparent text-xs text-slate-800 outline-none" placeholder="PO# / Customer / Item" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
           </label>
         </div>
