@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { PropsWithChildren } from "react";
-import { api } from "../api/client";
+import { api, currentUsername } from "../api/client";
 
-export type OptimizationJobStatus = "Queued" | "Processing" | "Ready" | "Applied" | "Failed" | "Expired";
+export type OptimizationJobStatus = "Queued" | "Processing" | "Ready" | "Applied" | "Failed" | "Expired" | "Stale";
 
 export interface OptimizationJobSummary {
   id: number;
@@ -12,6 +12,10 @@ export interface OptimizationJobSummary {
   createdAt: string;
   startedAt?: string;
   completedAt?: string;
+  requestedBy: string;
+  isLatest: boolean;
+  canApply: boolean;
+  applyUntil?: string;
 }
 
 export interface OptimizationJobDetail {
@@ -23,53 +27,67 @@ export interface OptimizationJobDetail {
 interface OptimizationStatus {
   busy: boolean;
   latest: OptimizationJobSummary | null;
+  jobs: OptimizationJobSummary[];
 }
 
 interface OptimizationContextValue extends OptimizationStatus {
   refresh: () => Promise<void>;
-  start: (payload: unknown) => Promise<OptimizationJobSummary>;
+  start: () => Promise<OptimizationJobSummary>;
   get: (id: number) => Promise<OptimizationJobDetail>;
-  markRead: (id: number) => Promise<void>;
-  markApplied: (id: number) => Promise<void>;
+  markRead: (ids: number[]) => void;
 }
 
 const OptimizationContext = createContext<OptimizationContextValue | null>(null);
 
 export function ScheduleOptimizationProvider({ children }: PropsWithChildren) {
-  const [status, setStatus] = useState<OptimizationStatus>({ busy: false, latest: null });
+  const [status, setStatus] = useState<OptimizationStatus>({ busy: false, latest: null, jobs: [] });
+  const readKey = `sopra-optimization-read:${currentUsername()}`;
+
+  const readIds = useCallback(() => {
+    try {
+      const ids: unknown = JSON.parse(localStorage.getItem(readKey) ?? "[]");
+      return new Set<number>(Array.isArray(ids) ? ids.filter(Number.isInteger) : []);
+    } catch {
+      return new Set<number>();
+    }
+  }, [readKey]);
 
   const refresh = useCallback(async () => {
-    setStatus(await api<OptimizationStatus>("/schedule-optimizations/status"));
-  }, []);
+    const response = await api<OptimizationStatus>("/schedule-optimizations/status");
+    const seen = readIds();
+    setStatus({
+      ...response,
+      jobs: (response.jobs ?? (response.latest ? [response.latest] : []))
+        .map((job) => ({ ...job, isRead: seen.has(job.id) })),
+    });
+  }, [readIds]);
 
   useEffect(() => { void refresh().catch(() => undefined); }, [refresh]);
   useEffect(() => {
-    if (!status.busy && status.latest?.status !== "Ready") return;
     const timer = window.setInterval(() => void refresh().catch(() => undefined), 30_000);
     return () => window.clearInterval(timer);
-  }, [refresh, status.busy, status.latest?.status]);
+  }, [refresh]);
 
   const value = useMemo<OptimizationContextValue>(() => ({
     ...status,
     refresh,
-    start: async (payload) => {
+    start: async () => {
       const job = await api<OptimizationJobSummary>("/schedule-optimizations", {
         method: "POST",
-        body: JSON.stringify({ payload }),
       });
-      setStatus({ busy: true, latest: job });
+      setStatus((current) => ({ busy: true, latest: job,
+        jobs: [{ ...job, isRead: false }, ...current.jobs.filter((row) => row.id !== job.id)] }));
       return job;
     },
     get: (id) => api<OptimizationJobDetail>(`/schedule-optimizations/${id}`),
-    markRead: async (id) => {
-      const job = await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/read`, { method: "POST" });
-      setStatus((current) => ({ ...current, latest: current.latest?.id === id ? job : current.latest }));
+    markRead: (ids) => {
+      const seen = readIds();
+      ids.forEach((id) => seen.add(id));
+      localStorage.setItem(readKey, JSON.stringify([...seen]));
+      setStatus((current) => ({ ...current,
+        jobs: current.jobs.map((job) => seen.has(job.id) ? { ...job, isRead: true } : job) }));
     },
-    markApplied: async (id) => {
-      await api<OptimizationJobSummary>(`/schedule-optimizations/${id}/applied`, { method: "POST" });
-      setStatus({ busy: false, latest: null });
-    },
-  }), [refresh, status]);
+  }), [readIds, readKey, refresh, status]);
 
   return <OptimizationContext.Provider value={value}>{children}</OptimizationContext.Provider>;
 }

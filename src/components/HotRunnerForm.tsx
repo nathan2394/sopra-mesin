@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { notify } from "./Notification";
 import type { HotRunner, HotRunnerDraft, WarehouseOption } from "../types";
 import { Select } from "../ui/Select";
 import * as ui from "../ui/classNames";
@@ -49,7 +50,7 @@ export function HotRunnerForm({ initial, machineOptions, warehouseOptions, onSav
     try {
       await onSave({ ...draft, machine: draft.machine.trim() });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Hot runner belum dapat disimpan.");
+      notify("error", cause instanceof Error ? cause.message : "Hot runner belum dapat disimpan.");
     } finally {
       setSaving(false);
     }

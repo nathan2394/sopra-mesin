@@ -100,8 +100,8 @@ export function Notification() {
           <div className="notification-copy">
             <h2 id="notification-title" className="text-center text-xl font-bold tracking-tight text-slate-900">{messageTitle}</h2>
             <div id="notification-message" className="flex flex-col gap-4 break-words text-center text-sm leading-6 text-slate-600">
-              {messageBody.split("\n\n").map((paragraph, index) => <div key={index} className={/^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status)[^:\n]*:/.test(paragraph) ? "rounded-md bg-slate-50 px-4 py-3 text-left" : ""}>{paragraph.split("\n").map((line, lineIndex) => {
-                const label = /^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status)[^:\n]*:/.exec(line);
+              {messageBody.split("\n\n").map((paragraph, index) => <div key={index} className={/^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status|Stok|Sedang dipakai|Lokasi|Cavity)[^:\n]*:/.test(paragraph) ? "rounded-md bg-slate-50 px-4 py-3 text-left" : ""}>{paragraph.split("\n").map((line, lineIndex) => {
+                const label = /^(Mesin|Mulai|Selesai|Order|Produk|Jadwal|Kolom|Baris|Periksa|Tujuan|Status|Stok|Sedang dipakai|Lokasi|Cavity)[^:\n]*:/.exec(line);
                 return <span key={lineIndex} className="block">{label ? <><strong className="font-semibold text-slate-800">{label[0]}</strong>{line.slice(label[0].length)}</> : line}</span>;
               })}</div>)}
             </div>

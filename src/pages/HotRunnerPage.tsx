@@ -163,7 +163,7 @@ export function HotRunnerPage() {
             key: "actions",
             header: "",
             className: "whitespace-nowrap text-right",
-            cell: (row) => (
+            cell: (row) => row.inUse === 0 ? (
               <>
                 <button
                   type="button"
@@ -183,7 +183,7 @@ export function HotRunnerPage() {
                   Delete
                 </button>
               </>
-            ),
+            ) : null,
           },
         ]}
       />

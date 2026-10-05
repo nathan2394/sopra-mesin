@@ -12,21 +12,27 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   options: SelectOption[];
+  placeholder?: string;
+  maxVisible?: number;
+  portal?: boolean;
   buttonClassName?: string;
   className?: string;
   disabled?: boolean;
 }
 
-export function Select({ value, onChange, options, buttonClassName, className, disabled }: Props) {
+export function Select({ value, onChange, options, placeholder, maxVisible, portal, buttonClassName, className, disabled }: Props) {
   const [query, setQuery] = useState("");
   const selected = options.find((option) => option.value === value);
-  const visible = options.filter((option) => `${option.label} ${option.value}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const visible = options.filter((option) => `${option.label} ${option.value}`.toLowerCase().includes(query.trim().toLowerCase())).slice(0, maxVisible);
 
   return <Combobox value={value} onChange={(next) => next !== null && onChange(next)} onClose={() => setQuery("")} disabled={disabled} immediate>
     <div className={cx("relative", className)}>
-      <ComboboxInput aria-label="Search options" className={cx(buttonClassName ?? selectButton, "pr-8")} displayValue={() => selected?.label ?? value} onChange={event => setQuery(event.target.value)} />
+      <ComboboxInput aria-label="Search options" placeholder={placeholder} className={cx(buttonClassName ?? selectButton, "pr-8")} displayValue={() => selected?.label ?? value} onChange={event => setQuery(event.target.value)} />
       <ComboboxButton aria-label="Open options" className="absolute inset-y-0 right-0 flex items-center px-2 text-slate-400"><ChevronsUpDown className="h-4 w-4" /></ComboboxButton>
-      <ComboboxOptions transition className="absolute left-0 top-full z-50 mt-1 max-h-64 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg focus:outline-none data-closed:opacity-0">
+      <ComboboxOptions anchor={portal ? "bottom start" : undefined} portal={portal} transition className={cx(
+        "mt-1 max-h-64 max-w-[calc(100vw-2rem)] overflow-auto rounded-md border border-slate-200 bg-white py-1 text-sm shadow-lg focus:outline-none data-closed:opacity-0",
+        portal ? "z-[55] w-[var(--input-width)]" : "absolute left-0 top-full z-50 w-max min-w-full",
+      )}>
         {visible.map((option) => <ComboboxOption key={option.value} value={option.value} className={({ focus }) => cx("relative cursor-pointer py-2 pr-3 pl-8 select-none", focus ? "bg-brand-600 text-white" : "text-slate-800")}>
           {({ selected: active }) => <><span className={cx("block whitespace-normal", active && "font-semibold")}>{option.label}</span>{active && <span className="absolute inset-y-0 left-0 flex items-center pl-2.5"><Check className="h-4 w-4" /></span>}</>}
         </ComboboxOption>)}

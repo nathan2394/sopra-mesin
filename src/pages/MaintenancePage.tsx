@@ -38,6 +38,13 @@ const WEEKDAYS = [
 
 const scheduleTypeButtonClass = "rounded px-3 py-1.5 text-xs font-semibold transition-colors";
 
+const canEditMaintenance = (window: MaintenanceWindow) => {
+  const now = Date.now();
+  const start = Date.parse(window.startAt);
+  const end = Date.parse(window.endAt);
+  return window.scheduleType === "Recurring" ? now < start || now >= end : now < start;
+};
+
 interface DrawerProps {
   open: boolean;
   editingMaintenance: MaintenanceWindow | null;
@@ -299,6 +306,7 @@ export function MaintenancePage() {
   };
 
   const openEditMaintenance = (window: MaintenanceWindow) => {
+    if (!canEditMaintenance(window)) return;
     const start = new Date(window.startAt);
     const durationHours = (new Date(window.endAt).getTime() - start.getTime()) / 3_600_000;
     const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -319,6 +327,12 @@ export function MaintenancePage() {
   };
 
   const handleSaveWindow = async () => {
+    if (editingMaintenance && !canEditMaintenance(editingMaintenance)) {
+      setMwError(Date.parse(editingMaintenance.endAt) <= Date.now()
+        ? "Jadwal sekali jalan yang sudah selesai tidak dapat diedit."
+        : "Maintenance sedang berjalan. Tunggu jadwal selesai sebelum mengeditnya.");
+      return;
+    }
     if (mwMachineIds.length === 0 || !mwStartsOn || mwDuration < 1 || (mwScheduleType === "recurring" && ((mwRepeats === "monthly" && (mwDay < 1 || mwDay > 28)) || (mwRepeats === "weekly" && mwWeekdays.length === 0)))) {
       setMwError(mwMachineIds.length === 0 ? "Pilih minimal satu mesin." : "Lengkapi jadwal dan pilih tanggal bulanan antara 1 sampai 28.");
       return;
@@ -441,7 +455,7 @@ export function MaintenancePage() {
           { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${wibInputTime(window.startAt)}-${wibInputTime(window.endAt)}` : "One time" },
           { key: "next", header: "Next", cell: (window) => formatDate(window.startAt) },
           { key: "reason", header: "Reason", cell: (window) => window.reason ?? "—" },
-          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window) => <><button className={ui.btnLink} onClick={() => openEditMaintenance(window)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button></> },
+          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window) => <><button className={`${ui.btnLink} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canEditMaintenance(window)} title={!canEditMaintenance(window) ? "Jadwal yang sedang berjalan atau jadwal sekali jalan yang sudah lewat tidak dapat diedit" : undefined} onClick={() => openEditMaintenance(window)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button></> },
         ]}
         pagination={{ ...maintenancePagination, onPageChange: setMaintenancePage, label: "Maintenance" }}
         isLoading={isLoading}

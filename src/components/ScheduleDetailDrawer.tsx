@@ -107,6 +107,8 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
     setupPercentage !== (maintenance.setupPercentage?.replace(/%$/, "") ?? "") || setupReason !== (maintenance.reason ?? ""));
   const invalidSetup = !Number.isFinite(Number(setupDuration)) || Number(setupDuration) <= 0 ||
     (setupPercentage !== "" && !/^\d+(\.\d+)?$/.test(setupPercentage));
+  const canEditSetup = maintenance?.type === MaintenanceType.Setup &&
+    Date.parse(maintenance.startAt) > Date.now();
   const isComplete = job?.status === JobStatus.ProductionComplete;
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
   const canEdit = job?.status === JobStatus.Open;
@@ -179,7 +181,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
                 <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
                 <div><p className="text-13 text-slate-400">Order number</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
-                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.customerName ?? "-"}</p></div>
+                <div className="col-span-2"><p className="text-13 text-slate-400">Customer</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.bufferId != null ? "BUFFER" : job?.customerName ?? "-"}</p></div>
                 <div className="col-span-2"><p className="text-13 text-slate-400">Item</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.productName ?? "-"}</p>{job?.itemCode && <p className="mt-0.5 text-xs text-slate-400">{job.itemCode}</p>}</div>
                 <div><p className="text-13 text-slate-400">Preform</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.preform ?? "-"}</p></div>
                 <div><p className="text-13 text-slate-400">Cavity used</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.cavity ?? "-"}</p></div>
@@ -193,7 +195,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
             <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
               {maintenance?.type === MaintenanceType.Setup && onSaveSetup && <div className="col-span-2 flex items-center justify-between">
                 <span className="text-sm font-semibold text-slate-900">Edit setup</span>
-                <button type="button" role="switch" aria-label="Edit setup" aria-checked={editingSetup} disabled={savingSetup} onClick={() => {
+                <button type="button" role="switch" aria-label="Edit setup" aria-checked={editingSetup} disabled={savingSetup || !canEditSetup} title={!canEditSetup ? "Setup yang sudah mulai atau selesai tidak dapat diedit" : undefined} onClick={() => {
                   setEditingSetup(!editingSetup);
                   setSetupDuration(String((Date.parse(maintenance.endAt) - Date.parse(maintenance.startAt)) / 60000));
                   setSetupPercentage(maintenance.setupPercentage?.replace(/%$/, "") ?? "");
@@ -210,7 +212,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
               </>}
               <div className="col-span-2"><label htmlFor={editingSetup ? "setup-reason" : undefined} className="block text-13 text-slate-400">Reason</label>{editingSetup ? <input id="setup-reason" className={`${ui.input} mt-1`} maxLength={500} disabled={savingSetup} value={setupReason} onChange={e => setSetupReason(e.target.value)} /> : <p className="mt-1 text-sm font-semibold leading-5 text-slate-950">{maintenance?.reason || "No reason provided"}</p>}</div>
               {editingSetup && invalidSetup && <p role="alert" className="col-span-2 text-xs text-red-600">Isi durasi lebih dari nol dan persentase nol atau lebih.</p>}
-              {editingSetup && maintenance?.type === MaintenanceType.Setup && onSaveSetup && <div className="col-span-2 flex justify-end"><button type="button" className={ui.btnPrimary} disabled={invalidSetup || savingSetup} onClick={async () => {
+              {editingSetup && maintenance?.type === MaintenanceType.Setup && onSaveSetup && <div className="col-span-2 flex justify-end"><button type="button" className={ui.btnPrimary} disabled={invalidSetup || savingSetup || !canEditSetup} onClick={async () => {
                 setSavingSetup(true);
                 try {
                   const saved = await onSaveSetup(maintenance.id, { ...maintenance, endAt: toJakartaDateTime(Date.parse(maintenance.startAt) + Number(setupDuration) * 60000), setupPercentage: setupPercentage ? `${setupPercentage}%` : undefined, reason: setupReason });
