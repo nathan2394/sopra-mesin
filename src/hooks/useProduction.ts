@@ -444,8 +444,11 @@ export function useProduction(options: ProductionOptions = {}) {
         .filter((row) => row.type === "Corrective Maintenance" && row.affectedScheduleId && Date.parse(row.endAt) > now)
         .map((row) => Number(row.affectedScheduleId)));
       const startedSetupIds = new Set(allJobs
-        .filter((job) => job.setupMaintenanceId && Date.parse(job.startsAt) <= now)
+        .filter((job) => job.setupMaintenanceId && Date.parse(job.startsAt) <= now && Date.parse(job.endsAt) > now)
         .map((job) => job.setupMaintenanceId!));
+      existingMaintenance.filter((row) => row.type === "Setup Maintenance" &&
+        Date.parse(row.startAt) <= now && Date.parse(row.endAt) > now)
+        .forEach((row) => startedSetupIds.add(row.id));
       const protectedJobsByItemId = new Map(allJobs
         .filter((job) => itemIdOf(job) && (Date.parse(job.startsAt) <= now ||
           startedSetupIds.has(job.setupMaintenanceId ?? 0) ||
@@ -469,10 +472,10 @@ export function useProduction(options: ProductionOptions = {}) {
       if (missingLocked) throw new Error(
         `Jadwal terkunci tidak lengkap\n\nAI tidak mengembalikan jadwal terkunci untuk ${missingLocked.itemName} di ${missingLocked.machineLineCode}. Hasil optimasi tidak diterapkan. Jalankan Optimize Schedule kembali.`);
       const missingGroupOrder = allJobs.find((job) =>
-        startedSetupIds.has(job.setupMaintenanceId ?? 0) && itemIdOf(job) &&
+        startedSetupIds.has(job.setupMaintenanceId ?? 0) && Date.parse(job.endsAt) > now && itemIdOf(job) &&
         !returnedItemIds.has(itemIdOf(job)!));
       if (missingGroupOrder) throw new Error(
-        `Grup setup tidak lengkap\n\nProduksi dalam grup setup di ${missingGroupOrder.machineLineCode} sudah mulai. AI harus mengembalikan semua order dalam grup tanpa mengubah jadwalnya.\n\nProduk yang hilang: ${missingGroupOrder.itemName}\n\nTidak ada jadwal yang diterapkan. Jalankan Optimize Schedule kembali.`);
+        `Grup setup tidak lengkap\n\nSetup atau produksi di ${missingGroupOrder.machineLineCode} sudah mulai. AI tidak mengembalikan ${missingGroupOrder.itemName}. Optimasi dibatalkan.`);
       const hasBufferResult = optimized.orderSchedules.some((row) => row.itemId.startsWith("B-"));
       const claimedScheduleIds = new Set<number>();
 
@@ -491,7 +494,7 @@ export function useProduction(options: ProductionOptions = {}) {
             const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? "mesin lain";
             const reason = Date.parse(matched.endsAt) <= now ? "Produksi sudah selesai dan menjadi riwayat."
               : Date.parse(matched.startsAt) <= now ? "Produksi sedang berjalan."
-              : startedSetupIds.has(matched.setupMaintenanceId ?? 0) ? "Produksi lain dalam grup setup sudah mulai."
+              : startedSetupIds.has(matched.setupMaintenanceId ?? 0) ? "Setup atau produksi dalam grup sudah mulai."
               : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
               : "Status produksi belum memungkinkan perubahan.";
             throw new Error(`Jadwal yang dilindungi tidak boleh berubah\n\n${reason} AI mengubah mesin, waktu, atau detail produksinya.\n\nOrder: ${matched.order?.orderNumber || "—"}\nProduk: ${matched.itemName}\nMesin saat ini: ${matched.machineLineCode}\nMulai: ${formatDateTime(matched.startsAt)} WIB\nSelesai: ${formatDateTime(matched.endsAt)} WIB\nMesin dari AI: ${aiMachine}\n\nTidak ada jadwal yang diterapkan. Jalankan Optimize Schedule kembali.`);
@@ -537,6 +540,7 @@ export function useProduction(options: ProductionOptions = {}) {
       ).map((job) => job.setupMaintenanceId!));
       const replacedSetup = existingMaintenance.filter((row) =>
         row.type === "Setup Maintenance" &&
+        Date.parse(row.startAt) > now &&
         !protectedSetupIds.has(row.id) && !protectedScheduleIds.has(row.affectedScheduleId ?? 0) &&
         (replaceableSetupIds.has(row.id) || replaceableScheduleIds.has(row.affectedScheduleId ?? 0))
       );
@@ -582,6 +586,7 @@ export function useProduction(options: ProductionOptions = {}) {
           if (!currentSetup || !entireGroupIsProtected || setupIds.size > 1)
             throw new Error("Grup setup tidak dapat diganti\n\nHasil optimasi mengubah grup dengan produksi yang dilindungi. Belum ada perubahan diterapkan. Jalankan optimasi kembali menggunakan jadwal terbaru.");
           const currentItemIds = allJobs.filter((job) => job.setupMaintenanceId === currentSetup.id)
+            .filter((job) => Date.parse(job.endsAt) > now)
             .map(itemIdOf).filter((id): id is string => !!id);
           if (startedSetupIds.has(currentSetup.id) &&
             (currentItemIds.length !== itemIds.length || currentItemIds.some((id) => !itemIds.includes(id))))
