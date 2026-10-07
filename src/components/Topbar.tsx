@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Bell, CheckCircle2, ChevronDown, ClipboardList, Clock3, LoaderCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, XCircle } from "lucide-react";
+import { Bell, CheckCircle2, ChevronDown, ClipboardList, Clock3, LoaderCircle, LogOut, Menu, PanelLeftClose, PanelLeftOpen, TriangleAlert, XCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { currentUsername, logout } from "../api/client";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
@@ -82,7 +82,7 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
                       : job.status === "Applied"
                         ? { title: "Sudah diterapkan", copy: "Jadwal produksi sudah diperbarui.", Icon: CheckCircle2, color: "text-emerald-600" }
                         : job.status === "Stale"
-                          ? { title: "Jadwal berubah", copy: job.errorMessage ?? "Hasil ini tidak dapat diterapkan.", Icon: XCircle, color: "text-amber-600" }
+                          ? { title: "Jadwal berubah", copy: job.errorMessage ?? "Hasil ini tidak dapat diterapkan.", Icon: TriangleAlert, color: "text-amber-600" }
                           : { title: "Optimasi gagal", copy: job.errorMessage?.replace(/^Optimasi gagal\s*/i, "") || "Layanan AI belum dapat menyelesaikan optimasi.", Icon: XCircle, color: "text-red-600" };
                 const StatusIcon = status.Icon;
                 return <div key={job.id} className="flex gap-3 border-b border-slate-100 px-4 py-3 last:border-b-0">
