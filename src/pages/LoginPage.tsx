@@ -1,25 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Eye, EyeOff, LogIn } from "lucide-react";
-import { googleClientId, login, loginWithGoogle } from "../api/client";
+import { forgetGoogleAccount, googleClientId, lastGoogleAccount, login, loginWithGoogle } from "../api/client";
+import { loadGoogleIdentity } from "../auth/googleIdentity";
 import { Logo } from "../components/Logo";
 import { notify } from "../components/Notification";
-
-interface GoogleCredentialResponse {
-  credential?: string;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (options: { client_id: string; callback: (response: GoogleCredentialResponse) => void }) => void;
-          renderButton: (element: HTMLElement, options: Record<string, string | number>) => void;
-        };
-      };
-    };
-  }
-}
 
 const inputClass = "h-11 w-full rounded-md border border-slate-300 bg-slate-50 px-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-600/15";
 
@@ -28,62 +12,84 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [rememberedAccount, setRememberedAccount] = useState(lastGoogleAccount);
+  const [googleStatus, setGoogleStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [googleRetry, setGoogleRetry] = useState(0);
   const googleButtonRef = useRef<HTMLDivElement>(null);
+  const inFlight = useRef(false);
+  const onAuthenticatedRef = useRef(onAuthenticated);
+
+  useEffect(() => {
+    onAuthenticatedRef.current = onAuthenticated;
+  }, [onAuthenticated]);
 
   useEffect(() => {
     let active = true;
     let observer: ResizeObserver | undefined;
+    const container = googleButtonRef.current;
+    setGoogleStatus("loading");
 
     const initialize = async () => {
       try {
-        const clientId = await googleClientId();
-        if (!active) return;
+        const [clientId, google] = await Promise.all([googleClientId(), loadGoogleIdentity()]);
+        if (!active || !container) return;
 
-        const render = () => {
-          const container = googleButtonRef.current;
-          if (!container || !window.google) return;
-          window.google.accounts.id.initialize({
-            client_id: clientId,
-            callback: async ({ credential }) => {
-              if (!credential) return notify("warning", "Login Google belum selesai\n\nTutup jendela login dan pilih akun Google kembali.");
-              setSubmitting(true);
-              try {
-                await loginWithGoogle(credential);
-                onAuthenticated();
-              } catch (cause) {
-                notify("error", cause instanceof Error ? cause.message : "Login Google gagal\n\nCoba lagi atau gunakan username dan password.");
-              } finally {
-                setSubmitting(false);
+
+        google.initialize({
+          client_id: clientId,
+          ux_mode: "popup",
+          login_hint: rememberedAccount?.subject,
+          use_fedcm_for_button: Boolean(rememberedAccount),
+          button_auto_select: Boolean(rememberedAccount),
+          callback: async ({ credential }) => {
+            if (!active || inFlight.current) return;
+            if (!credential) return notify("warning", "Login Google belum selesai\n\nKlik tombol Google untuk mencoba lagi.");
+            inFlight.current = true;
+            setSubmitting(true);
+            try {
+              const result = await loginWithGoogle(credential);
+              if (active) {
+                if (!result.accountRemembered) {
+                  notify("warning", "Berhasil masuk, tetapi akun belum dapat diingat\n\nLogin berikutnya mungkin meminta Anda memilih akun Google lagi.");
+                }
+                onAuthenticatedRef.current();
               }
-            },
-          });
+            } catch (cause) {
+              if (active) notify("error", cause instanceof Error ? cause.message : "Login Google gagal\n\nCoba lagi atau gunakan username dan password.");
+            } finally {
+              inFlight.current = false;
+              if (active) setSubmitting(false);
+            }
+          },
+        });
+
+        let renderedWidth = 0;
+        const render = () => {
+          if (!active) return;
+          const width = Math.min(400, Math.max(200, Math.floor(container.clientWidth)));
+          if (width === renderedWidth) return;
+          renderedWidth = width;
           container.replaceChildren();
-          window.google.accounts.id.renderButton(container, {
+          google.renderButton(container, {
             type: "standard",
             theme: "outline",
             size: "large",
             text: "signin_with",
             shape: "rectangular",
             logo_alignment: "left",
-            width: Math.floor(container.clientWidth),
+            width,
           });
         };
 
-        if (window.google) render();
-        else {
-          const existing = document.querySelector<HTMLScriptElement>('script[src="https://accounts.google.com/gsi/client"]');
-          const script = existing ?? Object.assign(document.createElement("script"), {
-            src: "https://accounts.google.com/gsi/client",
-            async: true,
-          });
-          script.addEventListener("load", render, { once: true });
-          if (!existing) document.head.appendChild(script);
-        }
-
+        render();
+        setGoogleStatus("ready");
         observer = new ResizeObserver(render);
-        if (googleButtonRef.current) observer.observe(googleButtonRef.current);
+        observer.observe(container);
       } catch (cause) {
-        if (active) notify("error", cause instanceof Error ? cause.message : "Login Google belum tersedia\n\nGunakan username dan password atau hubungi administrator.");
+        if (active) {
+          setGoogleStatus("error");
+          notify("error", cause instanceof Error ? cause.message : "Login Google belum tersedia\n\nGunakan username dan password atau hubungi administrator.");
+        }
       }
     };
 
@@ -91,11 +97,20 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
     return () => {
       active = false;
       observer?.disconnect();
+      container?.replaceChildren();
     };
-  }, [onAuthenticated]);
+  }, [rememberedAccount, googleRetry]);
+
+  const useAnotherAccount = () => {
+    if (inFlight.current) return;
+    forgetGoogleAccount();
+    setRememberedAccount(null);
+  };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     setSubmitting(true);
     try {
       await login(username, password);
@@ -103,6 +118,7 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
     } catch (cause) {
       notify("error", cause instanceof Error ? cause.message : "Login gagal\n\nPeriksa username dan password, lalu coba lagi.");
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -174,7 +190,20 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
             <span className="h-px flex-1 bg-slate-200" />
           </div>
 
-          <div ref={googleButtonRef} aria-label="Sign In With Google" className="flex h-11 w-full items-center justify-center overflow-hidden rounded-md" />
+          <section aria-label="Login dengan Google" aria-busy={submitting} className="space-y-3">
+            <div ref={googleButtonRef} aria-label="Lanjutkan dengan Google" className={`flex min-h-11 w-full items-center justify-center overflow-hidden rounded-md ${submitting ? "pointer-events-none opacity-60" : ""}`} />
+            {googleStatus === "loading" && <p role="status" className="text-center text-sm text-slate-500">Menyiapkan login Google...</p>}
+            {googleStatus === "error" && (
+              <button type="button" disabled={submitting} onClick={() => setGoogleRetry((attempt) => attempt + 1)} className="block w-full rounded-md py-2 text-sm font-medium text-brand-600 hover:underline disabled:opacity-50">
+                Coba muat ulang tombol Google
+              </button>
+            )}
+            {rememberedAccount && (
+              <button type="button" disabled={submitting} onClick={useAnotherAccount} className="block w-full rounded-md py-2 text-sm font-medium text-brand-600 hover:underline disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-brand-600">
+                Gunakan akun lain
+              </button>
+            )}
+          </section>
         </div>
       </section>
     </main>
