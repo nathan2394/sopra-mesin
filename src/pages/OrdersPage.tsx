@@ -111,7 +111,6 @@ export function OrdersPage() {
         />
         <span className={ui.filterSummary}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
-
       <OrderTable
         orders={orders}
         onEdit={(order) => { setEditing(order); setFormOpen(true); }}
