@@ -1,6 +1,6 @@
 import { queueWarning } from "../components/Notification";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "https://localhost:5081/api";
+const API_URL = import.meta.env?.VITE_API_URL ?? "https://localhost:5081/api";
 const TOKEN_KEY = "sopra-mesin-token";
 const USER_KEY = "sopra-mesin-user";
 const EMAIL_KEY = "sopra-mesin-email";
@@ -93,16 +93,18 @@ export function forgetGoogleAccount() {
   try {
     localStorage.removeItem(GOOGLE_ACCOUNT_KEY);
   } catch {
+    // Remembering an account is optional when browser storage is unavailable.
   }
 }
 
 const saveAuth = (auth: AuthResult) => {
   localStorage.setItem(TOKEN_KEY, auth.token);
   localStorage.setItem(USER_KEY, auth.username);
-
+  // These are display fields from the authenticated API response. Authorization
+  // remains enforced by the API; never invent an email from the username.
   for (const [key, value] of [[EMAIL_KEY, auth.email], [ROLE_KEY, auth.role]] as const) {
     if (typeof value === "string" && value.trim()) localStorage.setItem(key, value.trim());
-    else localStorage.removeItem(key);
+    else localStorage.removeItem(key); // Do not retain the previous user's profile.
   }
 };
 
@@ -118,6 +120,10 @@ async function send<T>(path: string, init: RequestInit): Promise<T> {
   }).catch(() => { throw new Error("Koneksi ke server terputus\n\nPeriksa koneksi internet. Jika sedang menyimpan, muat ulang dan periksa data sebelum mencoba lagi."); });
 
   if (response.status === 401 && token) {
+    // A request sent before a password change may finish after the new JWT
+    // has been saved. It must not sign out the freshly renewed session.
+    if (localStorage.getItem(TOKEN_KEY) !== token)
+      throw new Error("Sesi telah diperbarui\n\nSilakan muat ulang data yang sedang dibuka.");
     logout();
     queueWarning("Sesi login berakhir\n\nSilakan login kembali.");
     window.location.reload();
@@ -172,13 +178,22 @@ export async function login(username: string, password: string) {
 
 export const googleClientId = () => api<string>("/auth/google/client-id");
 
+export async function changePassword(passwords: { currentPassword: string; newPassword: string; confirmPassword: string }) {
+  const auth = await api<AuthResult>("/auth/change-password", {
+    method: "POST",
+    body: JSON.stringify(passwords),
+  });
+  saveAuth(auth);
+}
+
 export async function loginWithGoogle(credential: string): Promise<{ accountRemembered: boolean }> {
   const auth = await api<AuthResult>("/auth/google", {
     method: "POST",
     body: JSON.stringify({ credential }),
   });
   saveAuth(auth);
-
+  // Keep this hint on logout, but never store/reuse the Google credential.
+  // Prefer server metadata; older APIs still verified the submitted credential.
   const account = isGoogleAccount(auth.googleAccount)
     ? auth.googleAccount
     : googleAccountFromAcceptedCredential(credential);
@@ -194,6 +209,7 @@ export async function loginWithGoogle(credential: string): Promise<{ accountReme
     }));
     return { accountRemembered: true };
   } catch {
+    // A failed preference write must not turn a successful login into an error.
     return { accountRemembered: false };
   }
 }

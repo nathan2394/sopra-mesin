@@ -13,6 +13,7 @@ import type { Machine, MachineDraft, WarehouseOption } from "../types";
 
 export function MachinesPage() {
   const [machinePage, setMachinePage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [machineSearch, setMachineSearch] = useState("");
   const [machineTypeFilter, setMachineTypeFilter] = useState("All");
   const [machineStatusFilter, setMachineStatusFilter] = useState("All");
@@ -31,7 +32,7 @@ export function MachinesPage() {
   } = useProduction({
     machines: {
       page: machinePage,
-      pageSize: 15,
+      pageSize,
       search: machineSearchQuery,
       type: machineTypeFilter === "All" ? undefined : machineTypeFilter,
       isActive: machineStatusFilter === "All" ? undefined : machineStatusFilter === "Active",
@@ -105,9 +106,9 @@ export function MachinesPage() {
           { key: "name", header: "Name", cell: (machine) => machine.name },
           { key: "type", header: "Type", cell: (machine) => <span className={ui.badgeNeutral}>{machine.machineType}</span> },
           { key: "warehouse", header: "Warehouse", cell: (machine) => warehouseNames.get(machine.warehouseCode) ?? "—" },
-          { key: "cavity", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
+          { key: "cavity", align: "right", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
-          { key: "jobs", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
+          { key: "jobs", align: "right", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
           {
             key: "actions",
             header: "",
@@ -120,7 +121,7 @@ export function MachinesPage() {
             </>,
           },
         ]}
-        pagination={{ ...machinePagination, onPageChange: setMachinePage, label: "Machines" }}
+        pagination={{ ...machinePagination, onPageChange: setMachinePage, onPageSizeChange: (size) => { setPageSize(size); setMachinePage(1); }, label: "Machines" }}
         isLoading={isLoading}
       />
 

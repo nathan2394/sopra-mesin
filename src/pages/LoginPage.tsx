@@ -34,11 +34,14 @@ export function LoginPage({ onAuthenticated }: { onAuthenticated: () => void }) 
         const [clientId, google] = await Promise.all([googleClientId(), loadGoogleIdentity()]);
         if (!active || !container) return;
 
-
+        // Initialize once per account choice, never on a resize. No One Tap
+        // prompt: signing in still requires an explicit click on Google's button.
         google.initialize({
           client_id: clientId,
           ux_mode: "popup",
           login_hint: rememberedAccount?.subject,
+          // First login/account switch uses Google's ordinary account popup.
+          // Returning users opt into FedCM's personalized, click-to-sign-in flow.
           use_fedcm_for_button: Boolean(rememberedAccount),
           button_auto_select: Boolean(rememberedAccount),
           callback: async ({ credential }) => {
