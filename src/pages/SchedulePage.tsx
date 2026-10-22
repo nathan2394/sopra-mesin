@@ -10,7 +10,7 @@ import { useProduction } from "../hooks/useProduction";
 import { useScheduleOptimization } from "../hooks/useScheduleOptimization";
 import { JobStatus, MaintenanceType } from "../types";
 import type { MaintenanceWindow, Order, ScheduleJob } from "../types";
-import { addWibDays, formatDateTime, toJakartaDateTime, wibInputDate, wibInputDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
+import { addWibDays, formatDateTime, wibInputDate, wibInputDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
 import { parseOptimizationResponse } from "../utils/optimization";
 import type { OptimizedSchedule } from "../utils/optimization";
 import { StatsRow, StatCard } from "../ui/StatCard";
@@ -29,7 +29,6 @@ interface MoveNotice {
   previousStartsAt: Record<string, string>;
 }
 
-const jakartaDate = wibInputDate;
 const inputDate = wibInputDate;
 const inputTime = wibInputTime;
 export function SchedulePage() {
@@ -55,6 +54,7 @@ export function SchedulePage() {
   const [optimizationStage, setOptimizationStage] = useState<"apply" | null>(null);
   const [optimizationConfirmation, setOptimizationConfirmation] = useState<{
     jobId: number;
+    applyUntil: string;
     orders: Order[];
     deleteCount: number;
     candidate: OptimizedSchedule;
@@ -121,106 +121,10 @@ export function SchedulePage() {
     return [firstPage, ...otherPages].flatMap((page) => page.items);
   };
 
-  const buildOptimizeRequest = async () => {
-      const [orders, context] = await Promise.all([
-        loadOrders(),
-        loadOptimizationContext(),
-      ]);
-      const now = Date.now();
-      const today = jakartaDate(now);
-      const historyStart = now - 7 * 24 * 60 * 60_000;
-      const activeMachines = machines.filter((machine) => machine.isActive);
-      const isBlocked = (job: typeof context.jobs[number]) =>
-        Date.parse(job.endAt) > now &&
-        job.status !== JobStatus.ProductionComplete &&
-        (job.isLocked || job.status === JobStatus.ProductionProgress || job.status === JobStatus.ProductionPending);
-      const optimizable = orders.flatMap((order) => {
-        const deliveryAt = Date.parse(order.deliveryDate);
-        if (order.deliveryDate && (!Number.isFinite(deliveryAt) || deliveryAt <= now)) return [];
-        return order.items.flatMap((item) => {
-          if (!item.importedAt || jakartaDate(item.importedAt) !== today) return [];
-          const itemId = Number(item.id);
-          const job = context.jobs.find((row) => row.orderLineId === itemId);
-          if (job && (job.isLocked || job.status !== JobStatus.Open || Date.parse(job.endAt) <= now)) return [];
-          return [{
-            orderId: Number(order.id),
-            orderNumber: order.orderNo,
-            itemId,
-            source: order.sourceType,
-            scheduleId: job?.id ?? null,
-            machineId: job?.machineId ?? null,
-            itemName: item.description,
-            quantity: item.qty,
-            durationMinutes: job ? Math.round((new Date(job.endAt).getTime() - new Date(job.startAt).getTime()) / 60_000) : null,
-            deliveryDate: order.deliveryDate || null,
-            status: job?.status ?? JobStatus.Open,
-            startAt: job ? toJakartaDateTime(job.startAt) : null,
-            endAt: job ? toJakartaDateTime(job.endAt) : null,
-          }];
-        });
-      });
-      if (optimizable.length === 0) throw new Error("Belum ada order yang dapat dioptimasi\n\nPeriksa tanggal import, tanggal pengiriman, dan status produksi. Jadwal terkunci atau sudah mulai tidak disertakan.");
-      const payload = {
-      machines: activeMachines.map(({ createdAt: _, updatedAt: __, ...machine }) => machine),
-      machineHistory: activeMachines.map((machine) => ({
-        machineId: Number(machine.id),
-        productions: context.jobs
-          .filter((job) => job.machineId === machine.id &&
-            (job.isLocked || (Date.parse(job.startAt) < now && Date.parse(job.endAt) >= historyStart) || isBlocked(job)))
-          .sort((left, right) => Date.parse(left.startAt) - Date.parse(right.startAt))
-          .map((job) => ({
-            scheduleId: Number(job.id),
-            itemId: job.orderLineId,
-            orderNumber: job.sourceOrderRefs ?? null,
-            itemCode: job.itemCode ?? null,
-            itemName: job.productName,
-            preform: job.preform ?? null,
-            cavity: job.cavity ?? null,
-            quantity: job.qty,
-            startAt: toJakartaDateTime(job.startAt),
-            endAt: toJakartaDateTime(job.endAt),
-            status: job.status,
-          })),
-      })),
-      orders: optimizable,
-      blockedSlots: context.jobs.filter(isBlocked).map((job) => {
-        const order = orders.find((row) => job.sourceOrderRefs === row.orderNo);
-        return {
-          scheduleId: job.id,
-          orderId: order ? Number(order.id) : null,
-          itemId: job.orderLineId,
-          machineId: job.machineId,
-          preform: job.preform ?? null,
-          cavity: job.cavity ?? null,
-          startAt: toJakartaDateTime(job.startAt),
-          endAt: toJakartaDateTime(job.endAt),
-          status: job.status,
-        };
-      }),
-      maintenance: context.maintenance.filter((window) =>
-        window.type !== MaintenanceType.Setup && Date.parse(window.endAt) > now
-      ).map((window) => ({
-        maintenanceId: window.id,
-        machineId: window.machineId,
-        ...(window.type === MaintenanceType.Corrective ? {
-          itemId: context.jobs.find((job) => job.id === window.affectedScheduleId)?.orderLineId ?? null,
-        } : {}),
-        startAt: toJakartaDateTime(window.startAt),
-        endAt: toJakartaDateTime(window.endAt),
-        status: "Routine Maintenance",
-        type: window.type,
-        frequency: window.scheduleType === "One Time" ? "One Time" : window.repeatType,
-        reason: window.reason,
-      })),
-    };
-    return { orders, payload };
-  };
-
   const optimizeSchedule = async () => {
     setSubmittingOptimization(true);
     try {
-      const { payload } = await buildOptimizeRequest();
-      await optimization.start(payload);
+      await optimization.start();
     } catch (cause) {
       notify("error", cause instanceof Error ? cause.message : "Optimasi gagal\n\nCoba jalankan Optimize Schedule kembali.");
     } finally {
@@ -238,24 +142,38 @@ export function SchedulePage() {
     setSearchParams(next, { replace: true });
     void (async () => {
       try {
-        const [detail, orders, context] = await Promise.all([optimization.get(optimizationJobId), loadOrders(), loadOptimizationContext()]);
-        if (detail.job.status === "Expired") {
-          await optimization.refresh();
-          throw new Error("Hasil optimasi sudah kedaluwarsa\n\nJalankan Optimize Schedule kembali menggunakan jadwal terbaru.");
+        const detail = await optimization.get(optimizationJobId);
+        if (detail.job.status === "Expired" || detail.job.status === "Stale") {
+          await optimization.refresh().catch(() => undefined);
+          throw new Error(detail.job.errorMessage ?? "Hasil optimasi sudah kedaluwarsa\n\nJalankan Optimize Schedule kembali menggunakan jadwal terbaru.");
         }
         if (detail.job.status === "Applied") throw new Error("Hasil optimasi sudah diterapkan\n\nMuat ulang jadwal untuk melihat perubahan yang tersimpan.");
+        if (detail.job.status === "Ready" && !detail.job.isLatest)
+          throw new Error("Hasil optimasi sudah digantikan\n\nAda optimasi lebih baru. Review hasil terbaru dari notifikasi.");
+        if (detail.job.status === "Ready" && !detail.job.canApply)
+          throw new Error("Hari produksi sudah berganti\n\nHasil optimasi tetap ada di notifikasi, tetapi tidak dapat diterapkan setelah pukul 08:00 WIB pada hari produksi berikutnya.");
         if (!detail.response) throw new Error(detail.job.errorMessage ?? "Hasil optimasi belum siap\n\nTunggu notifikasi selesai, lalu buka review kembali.");
+        const [orders, context] = await Promise.all([loadOrders(), loadOptimizationContext()]);
         const candidate = parseOptimizationResponse(detail.response)[0];
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
+        const hasBufferResult = candidate.orderSchedules.some((row) => row.itemId.startsWith("B-"));
         const activeCorrectiveScheduleIds = new Set(context.maintenance
           .filter((window) => window.type === MaintenanceType.Corrective && window.affectedScheduleId && Date.parse(window.endAt) > Date.now())
           .map((window) => window.affectedScheduleId));
+        const startedSetupIds = new Set(context.jobs
+          .filter((job) => job.setupMaintenanceId && Date.parse(job.startAt) <= Date.now() && Date.parse(job.endAt) > Date.now())
+          .map((job) => job.setupMaintenanceId));
+        context.maintenance.filter((window) => window.type === MaintenanceType.Setup &&
+          Date.parse(window.startAt) <= Date.now() && Date.parse(window.endAt) > Date.now())
+          .forEach((window) => startedSetupIds.add(window.id));
         const deleteCount = context.jobs.filter((job) =>
-          job.orderLineId && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
-          !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId)
+          (job.orderLineId || hasBufferResult && job.bufferId) && !job.isLocked && job.status === JobStatus.Open && Date.parse(job.startAt) > Date.now() &&
+          !startedSetupIds.has(job.setupMaintenanceId) &&
+          !activeCorrectiveScheduleIds.has(job.id) && !returnedItemIds.has(job.orderLineId ? `O-${job.orderLineId}` : `B-${job.bufferId}-${job.bufferSequenceNo}`)
         ).length;
         setOptimizationConfirmation({
           jobId: optimizationJobId,
+          applyUntil: detail.job.applyUntil!,
           orders,
           deleteCount,
           candidate,
@@ -268,17 +186,26 @@ export function SchedulePage() {
     })();
   }, [optimization, optimizationJobId, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!optimizationConfirmation || !optimization.latest || optimization.latest.id <= optimizationConfirmation.jobId) return;
+    setOptimizationConfirmation(null);
+    notify("warning", "Hasil optimasi sudah digantikan\n\nAda optimasi lebih baru. Review hasil terbaru dari notifikasi.");
+  }, [optimization.latest?.id, optimizationConfirmation?.jobId]);
+
   const confirmOptimization = async () => {
     if (!optimizationConfirmation || applyingOptimization) return;
     const confirmation = optimizationConfirmation;
+    if (Date.now() >= Date.parse(confirmation.applyUntil)) {
+      setOptimizationConfirmation(null);
+      notify("error", "Hari produksi sudah berganti\n\nHasil optimasi tidak dapat diterapkan setelah pukul 08:00 WIB pada hari produksi berikutnya.");
+      return;
+    }
     setOptimizationConfirmation(null);
     setApplyingOptimization(true);
     setOptimizationStage("apply");
     try {
-      if (await applyOptimizationResponse(confirmation.orders, confirmation.candidate)) {
-        try { await optimization.markApplied(confirmation.jobId); }
-        catch { notify("warning", "Jadwal tersimpan, status belum diperbarui\n\nMuat ulang dan periksa jadwal yang tersimpan sebelum menerapkan hasil optimasi ini kembali."); }
-      }
+      await applyOptimizationResponse(confirmation.jobId, confirmation.orders, confirmation.candidate);
+      await optimization.refresh().catch(() => undefined);
     } finally {
       setApplyingOptimization(false);
       setOptimizationStage(null);
@@ -341,7 +268,7 @@ export function SchedulePage() {
             <div className="notification-content">
               <div className="notification-copy">
                 <h2 id="optimization-confirm-title" className="text-xl font-bold tracking-tight text-slate-900">Apply optimized schedule?</h2>
-                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">This AI result contains {optimizationConfirmation.candidate.orderSchedules.length} production schedules and {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance entries. Applying it will replace eligible schedules and remove {optimizationConfirmation.deleteCount} eligible schedules not included in the result. Protected schedules must stay unchanged. Cancel to keep the current schedule.</p>
+                <p id="optimization-confirm-message" className="mx-auto max-w-[300px] text-sm leading-6 text-slate-500">This AI result contains {optimizationConfirmation.candidate.orderSchedules.length} production schedules and {optimizationConfirmation.candidate.maintenanceSchedules.length} maintenance entries. Applying it will replace eligible schedules and remove {optimizationConfirmation.deleteCount} unlocked schedules not included in the result. Locked schedules may move but remain locked; running or completed schedules stay unchanged.</p>
               </div>
               <div className="flex justify-center gap-2">
                 <button type="button" className={`${ui.btnSecondary} min-w-24 justify-center px-5 py-2.5 text-sm`} onClick={() => setOptimizationConfirmation(null)}>Cancel</button>

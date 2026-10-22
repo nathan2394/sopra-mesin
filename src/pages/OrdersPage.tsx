@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Plus } from "lucide-react";
 import { useOrders } from "../hooks/useOrders";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { OrderForm } from "../components/OrderForm";
@@ -31,10 +31,11 @@ const SOURCE_CLASS: Record<OrderSourceType, string> = {
   [OrderSourceType.ManualForecast]: ui.badgePi,
 };
 
-const sortableHeaderClass = "whitespace-nowrap text-2xs font-semibold uppercase tracking-[0.06em] hover:text-slate-600";
+const sortableHeaderClass = "inline-flex items-center gap-1.5 whitespace-nowrap rounded text-xs font-semibold hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
 
 export function OrdersPage() {
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState<OrderSourceType | "All">("All");
   const [sortKey, setSortKey] = useState<SortKey>("deliveryDate");
@@ -44,7 +45,7 @@ export function OrdersPage() {
   const searchQuery = useDebouncedValue(search.trim());
   const { orders, pagination, summary, addOrder, updateOrder, removeOrder, isLoading } = useOrders(
     page,
-    15,
+    pageSize,
     searchQuery,
     sourceFilter === "All" ? "" : sourceFilter,
     sortKey,
@@ -120,6 +121,7 @@ export function OrdersPage() {
         onSort={handleSort}
         pagination={pagination}
         onPageChange={setPage}
+        onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
         isLoading={isLoading}
       />
 
@@ -142,26 +144,32 @@ interface OrderTableProps {
   onSort: (key: SortKey) => void;
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number };
   onPageChange: (page: number) => void;
+  onPageSizeChange: (size: number) => void;
   isLoading?: boolean;
 }
 
-function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagination, onPageChange, isLoading }: OrderTableProps) {
+function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagination, onPageChange, onPageSizeChange, isLoading }: OrderTableProps) {
+  const direction = (key: SortKey) => sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
+  const sortHeader = (key: SortKey, title: string) => {
+    const Icon = sortKey === key ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+    return <button type="button" className={sortableHeaderClass} onClick={() => onSort(key)} aria-label={`Sort by ${title}${sortKey === key ? `, currently ${direction(key)}` : ""}`}>{title}<Icon size={13} className={sortKey === key ? "text-brand-600" : "text-slate-400"} /></button>;
+  };
   return <DataTable
     rows={orders}
     rowKey={(order) => order.id}
-    emptyText="No orders match your filters."
+    emptyText="No orders match your filters. Try another search or source."
     isLoading={isLoading}
-    rowClassName={() => "hover:bg-slate-50"}
+    tableClassName="min-w-[1050px]"
     columns={[
-      { key: "source", header: "Source", cell: (order) => <span className={SOURCE_CLASS[order.sourceType]}>{SOURCE_LABEL[order.sourceType]}</span> },
-      { key: "orderNo", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("orderNo")}>Order No.{sortKey === "orderNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.orderNo },
-      { key: "customer", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerName")}>Customer{sortKey === "customerName" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerName || "-" },
-      { key: "po", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("customerPoNo")}>Customer PO #{sortKey === "customerPoNo" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => order.customerPoNo || "-" },
-      { key: "items", header: "Items", cell: (order) => <>{order.items[0]?.description ?? "-"}{order.items.length > 1 && <span className={ui.muted}> +{order.items.length - 1} more</span>}</> },
-      { key: "qty", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("qty")}>Total Qty{sortKey === "qty" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => computeOrderTotals(order.items).qty.toLocaleString() },
-      { key: "delivery", header: <button type="button" className={sortableHeaderClass} onClick={() => onSort("deliveryDate")}>Delivery date{sortKey === "deliveryDate" ? (sortDir === "asc" ? " ▲" : " ▼") : ""}</button>, cell: (order) => formatDate(order.deliveryDate) },
-      { key: "actions", header: "", className: "whitespace-nowrap text-right", cell: (order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <><button type="button" className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button><button type="button" className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button></> : null },
+      { key: "source", header: "Source", className: "whitespace-nowrap", cell: (order) => <span className={SOURCE_CLASS[order.sourceType]}>{SOURCE_LABEL[order.sourceType]}</span> },
+      { key: "orderNo", header: sortHeader("orderNo", "Order no."), sortDirection: direction("orderNo"), className: "min-w-36", cell: (order) => <span className="font-semibold text-slate-900">{order.orderNo}</span> },
+      { key: "customer", header: sortHeader("customerName", "Customer"), sortDirection: direction("customerName"), className: "min-w-40 max-w-60 break-words", cell: (order) => order.customerName || "—" },
+      { key: "po", header: sortHeader("customerPoNo", "Customer PO"), sortDirection: direction("customerPoNo"), className: "min-w-32 max-w-48 break-words", cell: (order) => order.customerPoNo || "—" },
+      { key: "items", header: "Items", className: "min-w-60 max-w-80", cell: (order) => <div className="space-y-1"><p className="break-words">{order.items[0]?.description ?? "—"}</p>{order.items.length > 1 && <details className="text-xs"><summary className="w-fit cursor-pointer rounded font-medium text-brand-600 hover:text-brand-700">{order.items.length - 1} more items</summary><ul className="mt-2 space-y-2 border-l-2 border-slate-200 pl-3 text-slate-600">{order.items.slice(1).map((item) => <li key={item.id} className="break-words">{item.description}<span className="mt-0.5 block text-2xs text-slate-400">{item.qty.toLocaleString()} pcs</span></li>)}</ul></details>}</div> },
+      { key: "qty", header: sortHeader("qty", "Total qty"), sortDirection: direction("qty"), align: "right", className: "whitespace-nowrap", cell: (order) => <span className="font-medium">{computeOrderTotals(order.items).qty.toLocaleString()}</span> },
+      { key: "delivery", header: sortHeader("deliveryDate", "Delivery date"), sortDirection: direction("deliveryDate"), className: "whitespace-nowrap", cell: (order) => formatDate(order.deliveryDate) },
+      { key: "actions", header: "", align: "right", className: "whitespace-nowrap", cell: (order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <div className="inline-flex items-center gap-1"><button type="button" aria-label={`Edit order ${order.orderNo}`} className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button><button type="button" aria-label={`Delete order ${order.orderNo}`} className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button></div> : <span className="text-2xs text-slate-400">Imported</span> },
     ]}
-    pagination={{ ...pagination, onPageChange, label: "Orders" }}
+    pagination={{ ...pagination, onPageChange, onPageSizeChange, label: "Orders" }}
   />;
 }

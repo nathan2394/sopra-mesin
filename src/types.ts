@@ -39,13 +39,34 @@ export interface Machine {
   lineCode: string;
   name: string;
   machineType: string;
+  warehouseCode: string;
   cavity?: number;
+  hasSchedule: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 }
 
-export type MachineDraft = Omit<Machine, "id" | "cavity" | "createdAt" | "updatedAt">;
+export type MachineDraft = Omit<Machine, "id" | "cavity" | "hasSchedule" | "createdAt" | "updatedAt">;
+
+export interface WarehouseOption {
+  code: string;
+  name: string;
+}
+
+export interface HotRunner {
+  id: number;
+  cavity: number;
+  machine: string;
+  location: string;
+  warehouseCode: string;
+  machineCodes: string[];
+  stock: number;
+  inUse: number;
+  available: number;
+}
+
+export type HotRunnerDraft = Pick<HotRunner, "machine" | "warehouseCode" | "cavity" | "stock">;
 
 export const MaintenanceType = {
   Preventive: "Preventive Maintenance",
@@ -98,6 +119,7 @@ export interface ScheduleJob {
   blockingMaintenanceId?: string;
   blockingMaintenanceReason?: string;
   customerName?: string;
+  bufferId?: number;
   profile?: string;
   itemCode?: string;
   shift?: string;
