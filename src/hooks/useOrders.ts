@@ -11,6 +11,8 @@ interface ApiOrderLine {
   itemCode?: string;
   itemName: string;
   quantity: number;
+  shipDate?: string;
+  deliveryDate?: string;
   importedAt?: string;
 }
 
@@ -46,22 +48,26 @@ const sourceToApi: Record<OrderSourceType, { source: string; paymentStatus: "Pai
 
 const fromApi = (order: ApiOrder): Order => {
   const timestamp = order.orderDate ?? toJakartaDateTime(Date.now());
+  const sourceType = sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid;
+  const detailDeliveryDates = order.lines.map((line) => line.deliveryDate).filter((date): date is string => !!date);
   return {
     id: String(order.id),
-    sourceType: sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid,
+    sourceType,
     orderNo: order.orderNumber,
     poDate: order.orderDate ?? "",
     customerName: order.customerName ?? "",
     customerPoNo: order.purchaseOrderNumber ?? "",
-    poShipStart: order.shipStartDate ?? "",
-    poShipEnd: order.shipEndDate ?? "",
-    deliveryDate: order.deliveryDate ?? "",
+    poShipStart: sourceType === OrderSourceType.SoPaid ? "" : order.shipStartDate ?? "",
+    poShipEnd: sourceType === OrderSourceType.SoPaid ? "" : order.shipEndDate ?? "",
+    deliveryDate: sourceType === OrderSourceType.SoPaid ? detailDeliveryDates.sort()[0] ?? "" : order.deliveryDate ?? "",
     orderDate: order.orderDate,
     items: order.lines.map((line) => ({
       id: String(line.id),
       itemCode: line.itemCode,
       description: line.itemName,
       qty: line.quantity,
+      shipDate: line.shipDate,
+      deliveryDate: line.deliveryDate,
       importedAt: line.importedAt,
     })),
     createdAt: timestamp,
