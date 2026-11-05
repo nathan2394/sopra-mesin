@@ -12,6 +12,8 @@ export interface OrderLineItem {
   itemCode?: string;
   description: string;
   qty: number;
+  shipDate?: string;
+  deliveryDate?: string;
   importedAt?: string;
 }
 

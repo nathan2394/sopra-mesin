@@ -32,6 +32,10 @@ const SOURCE_CLASS: Record<OrderSourceType, string> = {
 };
 
 const sortableHeaderClass = "inline-flex items-center gap-1.5 whitespace-nowrap rounded text-xs font-semibold hover:text-brand-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-600";
+const itemDates = (dates: (string | undefined)[]) => {
+  const unique = [...new Set(dates.filter((date): date is string => !!date))].sort();
+  return unique.length ? unique.map((date) => <div key={date}>{formatDate(date)}</div>) : "—";
+};
 
 export function OrdersPage() {
   const [page, setPage] = useState(1);
@@ -158,7 +162,7 @@ function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagina
     rowKey={(order) => order.id}
     emptyText="No orders match your filters. Try another search or source."
     isLoading={isLoading}
-    tableClassName="min-w-[1050px]"
+    tableClassName="min-w-[1150px]"
     columns={[
       { key: "source", header: "Source", className: "whitespace-nowrap", cell: (order) => <span className={SOURCE_CLASS[order.sourceType]}>{SOURCE_LABEL[order.sourceType]}</span> },
       { key: "orderNo", header: sortHeader("orderNo", "Order no."), sortDirection: direction("orderNo"), className: "min-w-36", cell: (order) => <span className="font-semibold text-slate-900">{order.orderNo}</span> },
@@ -166,7 +170,12 @@ function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagina
       { key: "po", header: sortHeader("customerPoNo", "Customer PO"), sortDirection: direction("customerPoNo"), className: "min-w-32 max-w-48 break-words", cell: (order) => order.customerPoNo || "—" },
       { key: "items", header: "Items", className: "min-w-60 max-w-80", cell: (order) => <div className="space-y-1"><p className="break-words">{order.items[0]?.description ?? "—"}</p>{order.items.length > 1 && <details className="text-xs"><summary className="w-fit cursor-pointer rounded font-medium text-brand-600 hover:text-brand-700">{order.items.length - 1} more items</summary><ul className="mt-2 space-y-2 border-l-2 border-slate-200 pl-3 text-slate-600">{order.items.slice(1).map((item) => <li key={item.id} className="break-words">{item.description}<span className="mt-0.5 block text-2xs text-slate-400">{item.qty.toLocaleString()} pcs</span></li>)}</ul></details>}</div> },
       { key: "qty", header: sortHeader("qty", "Total qty"), sortDirection: direction("qty"), align: "right", className: "whitespace-nowrap", cell: (order) => <span className="font-medium">{computeOrderTotals(order.items).qty.toLocaleString()}</span> },
-      { key: "delivery", header: sortHeader("deliveryDate", "Delivery date"), sortDirection: direction("deliveryDate"), className: "whitespace-nowrap", cell: (order) => formatDate(order.deliveryDate) },
+      { key: "ship", header: "Ship date", className: "whitespace-nowrap", cell: (order) => order.sourceType === OrderSourceType.SoPaid
+        ? itemDates(order.items.map((item) => item.shipDate))
+        : formatDate(order.poShipStart) },
+      { key: "delivery", header: sortHeader("deliveryDate", "Delivery date"), sortDirection: direction("deliveryDate"), className: "whitespace-nowrap", cell: (order) => order.sourceType === OrderSourceType.SoPaid
+        ? itemDates(order.items.map((item) => item.deliveryDate))
+        : formatDate(order.deliveryDate) },
       { key: "actions", header: "", align: "right", className: "whitespace-nowrap", cell: (order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <div className="inline-flex items-center gap-1"><button type="button" aria-label={`Edit order ${order.orderNo}`} className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button><button type="button" aria-label={`Delete order ${order.orderNo}`} className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button></div> : <span className="text-2xs text-slate-400">Imported</span> },
     ]}
     pagination={{ ...pagination, onPageChange, onPageSizeChange, label: "Orders" }}

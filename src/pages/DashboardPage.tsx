@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { PageHeader } from "../components/PageHeader";
 import { useOrders } from "../hooks/useOrders";
 import { useProduction } from "../hooks/useProduction";
-import { JobStatus } from "../types";
+import { JobStatus, OrderSourceType } from "../types";
 import type { HotRunner } from "../types";
 import { computeOrderTotals } from "../utils/orderMath";
 import { formatDate, formatDateTime, wibInputDate } from "../utils/dateFormat";
@@ -58,14 +58,21 @@ export function DashboardPage() {
     order.items.some((item) => !completedItemIds.has(item.id))), [completedItemIds, orders]);
   const today = wibInputDate();
   const now = Date.now();
+  const datedOpenOrders = useMemo(() => openOrders.map((order) => ({
+    ...order,
+    deliveryDate: order.sourceType === OrderSourceType.SoPaid
+      ? order.items.filter((item) => !completedItemIds.has(item.id))
+        .map((item) => item.deliveryDate).filter((date): date is string => !!date).sort()[0] ?? ""
+      : order.deliveryDate,
+  })), [completedItemIds, openOrders]);
 
-  const overdueOrders = useMemo(() => openOrders
+  const overdueOrders = useMemo(() => datedOpenOrders
     .filter((order) => order.deliveryDate && order.deliveryDate.slice(0, 10) < today)
-    .sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate)), [openOrders, today]);
-  const upcoming = useMemo(() => openOrders
+    .sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate)), [datedOpenOrders, today]);
+  const upcoming = useMemo(() => datedOpenOrders
     .filter((order) => order.deliveryDate && order.deliveryDate.slice(0, 10) >= today)
     .sort((a, b) => a.deliveryDate.localeCompare(b.deliveryDate))
-    .slice(0, 6), [openOrders, today]);
+    .slice(0, 6), [datedOpenOrders, today]);
 
   const jobsInProgress = scheduleJobs.filter((job) => job.status === JobStatus.ProductionProgress);
   const jobsPending = scheduleJobs.filter((job) => job.status === JobStatus.ProductionPending);
