@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PagedResult } from "../api/client";
 import { notify } from "../components/Notification";
-import { OrderSourceType } from "../types";
 import type {
   Machine,
   MachineDraft,
@@ -514,9 +513,7 @@ export function useProduction(options: ProductionOptions = {}) {
           quantity: result.quantity,
           startsAt: result.startAt,
           endsAt: result.endAt,
-          deliveryDate: entry?.order.sourceType === OrderSourceType.SoPaid
-            ? entry.item.deliveryDate?.slice(0, 10) ?? matched?.deliveryDate?.slice(0, 10) ?? null
-            : entry?.order.deliveryDate?.slice(0, 10) ?? null,
+          deliveryDate: entry?.item.deliveryDate?.slice(0, 10) ?? matched?.deliveryDate?.slice(0, 10) ?? null,
           reason: current?.reason,
           status: current?.status === "Production Pending" ? "Open" : current?.status ?? "Open",
           orderLineId: entry ? Number(entry.item.id) : null,
