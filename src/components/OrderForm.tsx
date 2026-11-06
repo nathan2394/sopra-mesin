@@ -25,8 +25,7 @@ const emptyDraft = (): OrderDraft => ({
   poDate: "",
   customerName: "",
   customerPoNo: "",
-  poShipStart: "",
-  poShipEnd: "",
+  shipDate: "",
   deliveryDate: "",
   items: [newLine()],
 });
@@ -91,11 +90,8 @@ export function OrderForm({ initial, onSave, onCancel }: Props) {
         <label className={ui.label}>Order date
           <input className={ui.input} type="date" value={draft.poDate.slice(0, 10)} onChange={(event) => patch({ poDate: event.target.value })} />
         </label>
-        <label className={ui.label}>Ship start
-          <input className={ui.input} type="date" value={draft.poShipStart.slice(0, 10)} onChange={(event) => patch({ poShipStart: event.target.value })} />
-        </label>
-        <label className={ui.label}>Ship end
-          <input className={ui.input} type="date" value={draft.poShipEnd.slice(0, 10)} onChange={(event) => patch({ poShipEnd: event.target.value })} />
+        <label className={ui.label}>Ship date
+          <input className={ui.input} type="date" value={draft.shipDate.slice(0, 10)} onChange={(event) => patch({ shipDate: event.target.value })} />
         </label>
         <label className={ui.label}>Delivery date
           <input className={ui.input} type="date" value={draft.deliveryDate.slice(0, 10)} onChange={(event) => patch({ deliveryDate: event.target.value })} />

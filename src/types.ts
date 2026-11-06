@@ -25,8 +25,7 @@ export interface Order {
   poDate: string;
   customerName: string;
   customerPoNo: string;
-  poShipStart: string;
-  poShipEnd: string;
+  shipDate: string;
   deliveryDate: string;
   orderDate?: string;
   items: OrderLineItem[];

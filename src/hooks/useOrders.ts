@@ -25,9 +25,6 @@ interface ApiOrder {
   purchaseOrderNumber?: string;
   customerName?: string;
   orderDate?: string;
-  shipStartDate?: string;
-  shipEndDate?: string;
-  deliveryDate?: string;
   lines: ApiOrderLine[];
 }
 
@@ -50,6 +47,7 @@ const fromApi = (order: ApiOrder): Order => {
   const timestamp = order.orderDate ?? toJakartaDateTime(Date.now());
   const sourceType = sourceFromApi[`${order.source}:${order.paymentStatus ?? ""}`] ?? OrderSourceType.SoPaid;
   const detailDeliveryDates = order.lines.map((line) => line.deliveryDate).filter((date): date is string => !!date);
+  const detailShipDates = order.lines.map((line) => line.shipDate).filter((date): date is string => !!date);
   return {
     id: String(order.id),
     sourceType,
@@ -57,9 +55,8 @@ const fromApi = (order: ApiOrder): Order => {
     poDate: order.orderDate ?? "",
     customerName: order.customerName ?? "",
     customerPoNo: order.purchaseOrderNumber ?? "",
-    poShipStart: sourceType === OrderSourceType.SoPaid ? "" : order.shipStartDate ?? "",
-    poShipEnd: sourceType === OrderSourceType.SoPaid ? "" : order.shipEndDate ?? "",
-    deliveryDate: sourceType === OrderSourceType.SoPaid ? detailDeliveryDates.sort()[0] ?? "" : order.deliveryDate ?? "",
+    shipDate: detailShipDates.sort()[0] ?? "",
+    deliveryDate: detailDeliveryDates.sort()[0] ?? "",
     orderDate: order.orderDate,
     items: order.lines.map((line) => ({
       id: String(line.id),
@@ -82,14 +79,13 @@ const toApi = (order: OrderDraft) => ({
   purchaseOrderNumber: order.customerPoNo,
   customerName: order.customerName,
   orderDate: order.poDate || null,
-  shipStartDate: order.poShipStart ? order.poShipStart.slice(0, 10) : null,
-  shipEndDate: order.poShipEnd ? order.poShipEnd.slice(0, 10) : null,
-  deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
   lines: order.items.map((line) => ({
     id: /^\d+$/.test(line.id) ? Number(line.id) : undefined,
     itemCode: line.itemCode,
     itemName: line.description,
     quantity: line.qty,
+    shipDate: order.shipDate ? order.shipDate.slice(0, 10) : null,
+    deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : null,
   })),
 });
 
