@@ -112,7 +112,6 @@ export function OrdersPage() {
             { value: "All", label: "All sources" },
             ...Object.values(OrderSourceType).map((s) => ({ value: s, label: SOURCE_LABEL[s] })),
           ]}
-
         />
         <span className={ui.filterSummary}>{orders.length} of {pagination.totalItems} shown</span>
       </div>
