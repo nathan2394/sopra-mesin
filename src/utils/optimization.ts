@@ -2,8 +2,8 @@ export interface OptimizedSchedule {
   orderSchedules: Array<{
     itemId: string;
     machineId: number;
-    preform: string;
-    cavity: number;
+    preform?: string | null;
+    cavity?: number | null;
     quantity: number;
     startAt: string;
     endAt: string;
@@ -39,7 +39,7 @@ export function parseOptimizationResponse(value: unknown): OptimizedSchedule[] {
     const { orderSchedules, maintenanceSchedules } = candidate as Partial<OptimizedSchedule>;
     if (!Array.isArray(orderSchedules) || !Array.isArray(maintenanceSchedules)) throw new Error("Hasil optimasi tidak lengkap\n\nData produksi atau maintenance belum tersedia. Jalankan Optimize Schedule kembali.");
     if (!orderSchedules.length && !maintenanceSchedules.length) throw new Error("Hasil optimasi kosong\n\nTidak ada jadwal produksi atau maintenance. Jalankan Optimize Schedule kembali.");
-    if (!orderSchedules.every((row) => isItemId(row?.itemId) && isId(row?.machineId) && typeof row?.preform === "string" && row.preform.trim() && isId(row?.cavity) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
+    if (!orderSchedules.every((row) => isItemId(row?.itemId) && isId(row?.machineId) && (row?.preform == null || typeof row.preform === "string") && (row?.cavity == null || isId(row.cavity)) && typeof row?.quantity === "number" && Number.isFinite(row.quantity) && row.quantity >= 0 && isDate(row?.startAt) && isDate(row?.endAt) && Date.parse(row.endAt) > Date.parse(row.startAt))) {
       throw new Error("Data produksi hasil optimasi tidak sesuai\n\nJalankan Optimize Schedule kembali.");
     }
     if (!maintenanceSchedules.every((row) => {

@@ -58,6 +58,7 @@ export function SchedulePage() {
     orders: Order[];
     deleteCount: number;
     candidate: OptimizedSchedule;
+    inputDeliveryDates: Record<string, string | null>;
   } | null>(null);
 
   useEffect(() => {
@@ -155,6 +156,9 @@ export function SchedulePage() {
         if (!detail.response) throw new Error(detail.job.errorMessage ?? "Hasil optimasi belum siap\n\nTunggu notifikasi selesai, lalu buka review kembali.");
         const [orders, context] = await Promise.all([loadOrders(), loadOptimizationContext()]);
         const candidate = parseOptimizationResponse(detail.response)[0];
+        const inputOrders = (detail.request as { orders?: Array<{ itemId: string; deliveryDate: string | null }> })?.orders;
+        if (!Array.isArray(inputOrders)) throw new Error("Input optimasi tidak lengkap\n\nJalankan Optimize Schedule kembali.");
+        const inputDeliveryDates = Object.fromEntries(inputOrders.map((row) => [row.itemId, row.deliveryDate]));
         const returnedItemIds = new Set(candidate.orderSchedules.map((row) => row.itemId));
         const hasBufferResult = candidate.orderSchedules.some((row) => row.itemId.startsWith("B-"));
         const activeCorrectiveScheduleIds = new Set(context.maintenance
@@ -177,6 +181,7 @@ export function SchedulePage() {
           orders,
           deleteCount,
           candidate,
+          inputDeliveryDates,
         });
         await optimization.refresh().catch(() => undefined);
       } catch (cause) {
@@ -204,7 +209,7 @@ export function SchedulePage() {
     setApplyingOptimization(true);
     setOptimizationStage("apply");
     try {
-      await applyOptimizationResponse(confirmation.jobId, confirmation.orders, confirmation.candidate);
+      await applyOptimizationResponse(confirmation.jobId, confirmation.orders, confirmation.candidate, confirmation.inputDeliveryDates);
       await optimization.refresh().catch(() => undefined);
     } finally {
       setApplyingOptimization(false);
