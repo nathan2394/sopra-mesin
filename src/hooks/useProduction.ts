@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { PagedResult } from "../api/client";
 import { notify } from "../components/Notification";
-import { OrderSourceType } from "../types";
 import type {
   Machine,
   MachineDraft,
@@ -497,8 +496,8 @@ export function useProduction(options: ProductionOptions = {}) {
             const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? "mesin lain";
             const reason = Date.parse(matched.startsAt) <= now ? "Produksi sedang berjalan."
               : startedSetupIds.has(matched.setupMaintenanceId ?? 0) ? "Setup atau produksi dalam grup sudah mulai."
-              : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
-              : "Status produksi belum memungkinkan perubahan.";
+                : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
+                  : "Status produksi belum memungkinkan perubahan.";
             throw new Error(`Jadwal yang dilindungi tidak boleh berubah\n\n${reason} AI mengubah mesin, waktu, atau detail produksinya.\n\nOrder: ${matched.order?.orderNumber || "—"}\nProduk: ${matched.itemName}\nMesin saat ini: ${matched.machineLineCode}\nMulai: ${formatDateTime(matched.startsAt)} WIB\nSelesai: ${formatDateTime(matched.endsAt)} WIB\nMesin dari AI: ${aiMachine}\n\nTidak ada jadwal yang diterapkan. Jalankan Optimize Schedule kembali.`);
           }
           return [];
