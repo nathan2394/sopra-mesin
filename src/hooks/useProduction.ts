@@ -429,7 +429,7 @@ export function useProduction(options: ProductionOptions = {}) {
     };
   }, []);
 
-  const applyOptimizationResponse = useCallback(async (jobId: number, orders: Order[], optimized: OptimizedSchedule) => {
+  const applyOptimizationResponse = useCallback(async (jobId: number, orders: Order[], optimized: OptimizedSchedule, inputDeliveryDates: Record<string, string | null>) => {
     try {
       const [allJobs, existingMaintenance] = await Promise.all([
         api<ApiJob[]>("/schedules"),
@@ -481,20 +481,21 @@ export function useProduction(options: ProductionOptions = {}) {
       const claimedScheduleIds = new Set<number>();
 
       const schedules = optimized.orderSchedules.flatMap((result) => {
+        const matched = allJobs.findLast((job) => itemIdOf(job) === result.itemId);
+        if (matched && Date.parse(matched.endsAt) <= now) return [];
         const entry = itemsById.get(result.itemId);
         const buffer = buffersById.get(result.itemId);
         if (!entry && !buffer) throw new Error("Item sudah berubah\n\nItem pada hasil optimasi tidak lagi tersedia. Muat ulang data dan jalankan optimasi kembali.");
-        const matched = allJobs.find((job) => itemIdOf(job) === result.itemId);
+        const deliveryDate = inputDeliveryDates[result.itemId];
         if (matched && protectedScheduleIds.has(matched.id)) {
           const unchanged = matched.machineId === result.machineId &&
             toJakartaDateTime(matched.startsAt) === toJakartaDateTime(result.startAt) &&
             toJakartaDateTime(matched.endsAt) === toJakartaDateTime(result.endAt) &&
-            (matched.preform ?? "") === result.preform && matched.cavity === result.cavity &&
+            (matched.preform ?? "") === (result.preform ?? "") && (matched.cavity ?? null) === (result.cavity ?? null) &&
             Number(matched.quantity) === result.quantity;
           if (!unchanged) {
             const aiMachine = allJobs.find((job) => job.machineId === result.machineId)?.machineLineCode ?? "mesin lain";
-            const reason = Date.parse(matched.endsAt) <= now ? "Produksi sudah selesai dan menjadi riwayat."
-              : Date.parse(matched.startsAt) <= now ? "Produksi sedang berjalan."
+            const reason = Date.parse(matched.startsAt) <= now ? "Produksi sedang berjalan."
               : startedSetupIds.has(matched.setupMaintenanceId ?? 0) ? "Setup atau produksi dalam grup sudah mulai."
               : activeCorrectiveScheduleIds.has(matched.id) || matched.status === "Production Pending" ? "Produksi tertahan corrective maintenance."
               : "Status produksi belum memungkinkan perubahan.";
@@ -514,9 +515,7 @@ export function useProduction(options: ProductionOptions = {}) {
           quantity: result.quantity,
           startsAt: result.startAt,
           endsAt: result.endAt,
-          deliveryDate: entry?.order.sourceType === OrderSourceType.SoPaid
-            ? entry.item.deliveryDate?.slice(0, 10) ?? matched?.deliveryDate?.slice(0, 10) ?? null
-            : entry?.order.deliveryDate?.slice(0, 10) ?? null,
+          deliveryDate: entry ? deliveryDate : null,
           reason: current?.reason,
           status: current?.status === "Production Pending" ? "Open" : current?.status ?? "Open",
           orderLineId: entry ? Number(entry.item.id) : null,

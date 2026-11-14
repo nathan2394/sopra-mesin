@@ -96,7 +96,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
             </div>
           </div>
           <label className="text-2xs font-medium text-slate-500">Machine
-            <div className="mt-1"><Select value={machineId} onChange={setMachineId} options={[{ value: "All", label: "All machines" }, ...machines.map((machine) => ({ value: machine.id, label: machine.lineCode }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
+            <div className="mt-1"><Select value={machineId} onChange={setMachineId} options={[{ value: "All", label: "All machines" }, ...[...machines].sort((a, b) => Number(a.id) - Number(b.id)).map((machine) => ({ value: machine.id, label: machine.lineCode }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
           </label>
           <label className="text-2xs font-medium text-slate-500">Current cavity
             <div className="mt-1"><Select value={cavity} onChange={setCavity} options={[{ value: "All", label: "All cavities" }, ...cavityOptions.map((value) => ({ value: String(value), label: `Cavity ${value}` }))]} buttonClassName="relative h-9 w-full rounded-md border border-slate-200 bg-white px-3 pr-8 text-left text-xs text-slate-700" /></div>
