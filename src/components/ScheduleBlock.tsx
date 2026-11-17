@@ -1,5 +1,5 @@
 import type { CSSProperties, MouseEventHandler, PointerEventHandler } from "react";
-import { LockKeyhole } from "lucide-react";
+import { LockKeyhole, TriangleAlert } from "lucide-react";
 import { formatDateTime, formatMonthDay, toJakartaDateTime, wibInputTime, wibStartOfDay } from "../utils/dateFormat";
 
 const DAY_MS = 86_400_000;
@@ -43,6 +43,7 @@ interface ScheduleBlockProps {
   title: string;
   subtitle?: string;
   locked?: boolean;
+  issue?: string | null;
   toneClassName: string;
   testId?: string;
   className?: string;
@@ -52,7 +53,7 @@ interface ScheduleBlockProps {
   onPointerDown?: PointerEventHandler<HTMLButtonElement>;
 }
 
-export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, toneClassName, testId, className, wrapperClassName, borderClassName = "border-slate-200", onClick, onPointerDown }: ScheduleBlockProps) {
+export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, issue, toneClassName, testId, className, wrapperClassName, borderClassName = "border-slate-200", onClick, onPointerDown }: ScheduleBlockProps) {
   const { left, width } = scheduleBlockGeometry(start, end, weekStart);
   const label = subtitle ?? scheduleBlockLabel(start, end, weekStart);
   const style: CSSProperties = { left: `calc(${left}% + 3px)`, width: `calc(${width}% - 6px)` };
@@ -67,15 +68,16 @@ export function ScheduleBlock({ start, end, weekStart, title, subtitle, locked, 
         data-testid={testId}
         className={`absolute top-2 flex h-10 flex-col justify-center gap-0.5 touch-none select-none overflow-hidden rounded px-2 text-left text-3xs font-semibold leading-3 text-white cursor-pointer ${toneClassName}${className ? ` ${className}` : ""}`}
         style={style}
-        title={`${locked ? "Locked · " : ""}${formatDateTime(start)} WIB - ${formatDateTime(end)} WIB`}
+        title={`${locked ? "Locked · " : ""}${formatDateTime(start)} WIB - ${formatDateTime(end)} WIB${issue ? ` · Issue: ${issue}` : ""}`}
         onClick={onClick}
         onPointerDown={onPointerDown}
       >
         <span className="flex min-w-0 items-center gap-1">
           {locked && <LockKeyhole size={10} className="shrink-0" aria-hidden="true" />}
           <span className="truncate">{title}</span>
+          {issue && <span className="sr-only">{issue}</span>}
         </span>
-        {label && <span className="truncate font-normal opacity-90">{label}</span>}
+        {label && <span className="flex min-w-0 items-center gap-1"><span className="truncate font-normal opacity-90">{label}</span>{issue && <span className="inline-flex shrink-0 items-center gap-0.5 font-medium text-amber-200"><TriangleAlert size={10} aria-hidden="true" />Issue</span>}</span>}
       </button>
     </div>
   );

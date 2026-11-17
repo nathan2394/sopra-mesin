@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "../api/client";
+import { useModulePermissions } from "../auth/permissions";
 import { HotRunnerForm } from "../components/HotRunnerForm";
 import { notify } from "../components/Notification";
 import { PageHeader } from "../components/PageHeader";
@@ -10,6 +11,7 @@ import { StatsRow, StatCard } from "../ui/StatCard";
 import * as ui from "../ui/classNames";
 
 export function HotRunnerPage() {
+  const { create: canCreate, update: canUpdate, delete: canDelete } = useModulePermissions("hot-runner");
   const [rows, setRows] = useState<HotRunner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -92,7 +94,7 @@ export function HotRunnerPage() {
         breadcrumb={[]}
         title="Hot Runner"
         subtitle="Live availability based on hot runners currently used by production."
-        actions={(
+        actions={canCreate ? (
           <button
             type="button"
             className={ui.btnPrimary}
@@ -103,7 +105,7 @@ export function HotRunnerPage() {
           >
             <Plus size={15} /> New hot runner
           </button>
-        )}
+        ) : undefined}
       />
 
       <StatsRow>
@@ -159,13 +161,13 @@ export function HotRunnerPage() {
               </span>
             ),
           },
-          {
+          ...(canUpdate || canDelete ? [{
             key: "actions",
             header: "",
             className: "whitespace-nowrap text-right",
-            cell: (row) => row.inUse === 0 ? (
+            cell: (row: HotRunner) => row.inUse === 0 ? (
               <>
-                <button
+                {canUpdate && <button
                   type="button"
                   className={ui.btnLink}
                   onClick={() => {
@@ -174,17 +176,17 @@ export function HotRunnerPage() {
                   }}
                 >
                   Edit
-                </button>
-                <button
+                </button>}
+                {canDelete && <button
                   type="button"
                   className={ui.btnLinkDanger}
                   onClick={() => void remove(row)}
                 >
                   Delete
-                </button>
+                </button>}
               </>
             ) : null,
-          },
+          }] : []),
         ]}
       />
 

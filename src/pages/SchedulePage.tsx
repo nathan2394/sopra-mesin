@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Check, LoaderCircle, WandSparkles, X } from "lucide-react";
+import { useModulePermissions } from "../auth/permissions";
 import { PageHeader } from "../components/PageHeader";
 import { notify } from "../components/Notification";
 import { ScheduleDetailDrawer } from "../components/ScheduleDetailDrawer";
@@ -32,6 +33,8 @@ interface MoveNotice {
 const inputDate = wibInputDate;
 const inputTime = wibInputTime;
 export function SchedulePage() {
+  const canUpdateSchedule = useModulePermissions("schedule").update;
+  const maintenanceAccess = useModulePermissions("maintenance");
   const optimization = useScheduleOptimization();
   const [searchParams, setSearchParams] = useSearchParams();
   const reviewedJobId = useRef<number | null>(null);
@@ -141,6 +144,10 @@ export function SchedulePage() {
     const next = new URLSearchParams(searchParams);
     next.delete("optimizationJob");
     setSearchParams(next, { replace: true });
+    if (!canUpdateSchedule) {
+      notify("warning", "Tidak ada izin menerapkan jadwal\n\nAkun Anda hanya dapat melihat jadwal. Hubungi administrator jika perlu mengubahnya.");
+      return;
+    }
     void (async () => {
       try {
         const detail = await optimization.get(optimizationJobId);
@@ -189,7 +196,7 @@ export function SchedulePage() {
         notify("error", cause instanceof Error ? cause.message : "Hasil optimasi tidak dapat dibuka\n\nMuat ulang dan periksa status optimasi.");
       }
     })();
-  }, [optimization, optimizationJobId, searchParams, setSearchParams]);
+  }, [canUpdateSchedule, optimization, optimizationJobId, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!optimizationConfirmation || !optimization.latest || optimization.latest.id <= optimizationConfirmation.jobId) return;
@@ -253,7 +260,7 @@ export function SchedulePage() {
         breadcrumb={[]}
         title="Production Schedule"
         subtitle="Plan production orders and maintenance across the weekly machine timeline."
-        actions={<button type="button" disabled={applyingOptimization || submittingOptimization || optimization.busy} onClick={() => void optimizeSchedule()} className={ui.btnSecondary}><WandSparkles size={14} />{optimization.busy ? "Optimization running" : submittingOptimization ? "Starting..." : "Optimize Schedule"}</button>}
+        actions={canUpdateSchedule ? <button type="button" disabled={applyingOptimization || submittingOptimization || optimization.busy} onClick={() => void optimizeSchedule()} className={ui.btnSecondary}><WandSparkles size={14} />{optimization.busy ? "Optimization running" : submittingOptimization ? "Starting..." : "Optimize Schedule"}</button> : undefined}
       />
 
       {optimizationStage && (
@@ -301,7 +308,7 @@ export function SchedulePage() {
         isLoading={isLoading}
         onSelectJob={(job) => { setSelectedMaintenanceId(null); setSelectedJobId(job.id); }}
         onSelectMaintenance={(window) => { setSelectedJobId(null); setSelectedMaintenanceId(window.id); }}
-        onJobMoved={movingJob ? undefined : handleJobMoved}
+        onJobMoved={movingJob || !canUpdateSchedule ? undefined : handleJobMoved}
       />
 
       {(selectedJob || selectedMaintenance) && (
@@ -315,9 +322,10 @@ export function SchedulePage() {
           getSetupJobs={getSetupJobs}
           machine={selectedMachine}
           machines={machines}
-          onSaveSetup={updateMaintenanceWindow}
+          onSaveSetup={maintenanceAccess.update ? updateMaintenanceWindow : undefined}
+          access={{ editSchedule: canUpdateSchedule, correctiveMaintenance: maintenanceAccess.create }}
           orderRef={selectedJob?.purchaseOrderNumber}
-          onSave={selectedJob ? async ({ isLocked, startAt, endAt, correctiveMaintenance }) => {
+          onSave={selectedJob && (canUpdateSchedule || maintenanceAccess.create) ? async ({ isLocked, startAt, endAt, correctiveMaintenance }) => {
             if (isLocked !== selectedJob.isLocked || startAt || endAt) {
               const saved = await updateJob(selectedJob.id, {
                 isLocked,

@@ -39,6 +39,7 @@ interface ApiJob {
   machineLineCode: string;
   isLocked: boolean;
   isMaintenance: boolean;
+  issue?: string | null;
   itemName: string;
   preform?: string;
   cavity?: number;
@@ -90,6 +91,7 @@ const jobFromApi = (job: ApiJob): StoredJob => ({
   id: String(job.id),
   machineId: String(job.machineId),
   isLocked: job.isLocked,
+  issue: job.issue,
   productName: job.itemName,
   preform: job.preform,
   cavity: job.cavity,
@@ -429,6 +431,7 @@ export function useProduction(options: ProductionOptions = {}) {
   }, []);
 
   const applyOptimizationResponse = useCallback(async (jobId: number, orders: Order[], optimized: OptimizedSchedule, inputDeliveryDates: Record<string, string | null>) => {
+    let submitted = false;
     try {
       const [allJobs, existingMaintenance] = await Promise.all([
         api<ApiJob[]>("/schedules"),
@@ -471,11 +474,6 @@ export function useProduction(options: ProductionOptions = {}) {
         itemIdOf(job) && !returnedItemIds.has(itemIdOf(job)!));
       if (missingLocked) throw new Error(
         `Jadwal terkunci tidak lengkap\n\nAI tidak mengembalikan jadwal terkunci untuk ${missingLocked.itemName} di ${missingLocked.machineLineCode}. Hasil optimasi tidak diterapkan. Jalankan Optimize Schedule kembali.`);
-      const missingGroupOrder = allJobs.find((job) =>
-        startedSetupIds.has(job.setupMaintenanceId ?? 0) && Date.parse(job.endsAt) > now && itemIdOf(job) &&
-        !returnedItemIds.has(itemIdOf(job)!));
-      if (missingGroupOrder) throw new Error(
-        `Grup setup tidak lengkap\n\nSetup atau produksi di ${missingGroupOrder.machineLineCode} sudah mulai. AI tidak mengembalikan ${missingGroupOrder.itemName}. Optimasi dibatalkan.`);
       const hasBufferResult = optimized.orderSchedules.some((row) => row.itemId.startsWith("B-"));
       const claimedScheduleIds = new Set<number>();
 
@@ -610,6 +608,7 @@ export function useProduction(options: ProductionOptions = {}) {
         }];
       });
       try {
+        submitted = true;
         await api<object>("/schedules/bulk-optimization", {
           method: "POST",
           body: JSON.stringify({
@@ -632,7 +631,14 @@ export function useProduction(options: ProductionOptions = {}) {
         notify("warning", "Jadwal tersimpan, tampilan belum diperbarui\n\nMuat ulang halaman untuk melihat jadwal terbaru.");
       }
       return true;
-    } catch (cause) { report(cause); return false; }
+    } catch (cause) {
+      void api<void>(`/schedule-optimizations/${jobId}/apply-failure`, {
+        method: "POST",
+        body: JSON.stringify({ phase: submitted ? "api" : "browser", message: (cause instanceof Error ? cause.message : "Apply gagal di browser.").slice(0, 2000) }),
+      }).catch(() => undefined);
+      report(cause);
+      return false;
+    }
   }, [refreshMaintenance, refreshSchedules]);
 
   return {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, Wrench } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, LoaderCircle, LockKeyhole, Search, TriangleAlert, Wrench } from "lucide-react";
 import { JobStatus, MaintenanceType, maintenanceTypeLabel } from "../types";
 import type { Machine, MaintenanceWindow, ScheduleJob } from "../types";
 import { addWibDays, formatDate, formatMonthDay, formatScheduleDateTime, wibInputDate, wibStartOfDay } from "../utils/dateFormat";
@@ -200,7 +200,7 @@ export function ScheduleGrid({ machines, jobs, maintenanceWindows, weekStart, we
                         {row.job.isLocked && <LockKeyhole size={11} className="shrink-0 text-slate-500" />}
                         <span className="truncate">{row.job.sourceOrderRefs || "No order"}</span>
                       </span>
-                      <span className="mt-0.5 block truncate text-xs text-slate-600">{row.job.productName}</span>
+                      <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-slate-600"><span className="truncate">{row.job.productName}</span>{row.job.issue && <span className="inline-flex shrink-0 items-center gap-0.5 text-3xs font-medium text-amber-700"><TriangleAlert size={10} aria-hidden="true" />Issue</span>}</span>
                       <span className="mt-1 block text-2xs tabular-nums text-slate-500">{formatScheduleDateTime(row.job.startAt)} → {formatScheduleDateTime(row.job.endAt)}</span>
                     </span>
                     <span className="shrink-0 text-right text-2xs font-semibold text-slate-500">Due<br />{row.job.deliveryDate ? formatMonthDay(row.job.deliveryDate) : "—"}</span>
@@ -242,6 +242,7 @@ function ScheduleBar({ job, weekStart, onSelect, onMove, wrapperClassName }: { j
       title={job.productName}
       subtitle={`Qty ${job.qty.toLocaleString()}`}
       locked={job.isLocked}
+      issue={job.issue}
       toneClassName={tone}
       testId={`schedule-job-${job.id}`}
       wrapperClassName={wrapperClassName}

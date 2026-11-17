@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
 import { api } from "../api/client";
+import { useModulePermissions } from "../auth/permissions";
 import { useProduction } from "../hooks/useProduction";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { PageHeader } from "../components/PageHeader";
@@ -12,6 +13,7 @@ import * as ui from "../ui/classNames";
 import type { Machine, MachineDraft, WarehouseOption } from "../types";
 
 export function MachinesPage() {
+  const { create: canCreate, update: canUpdate, delete: canDelete } = useModulePermissions("machines");
   const [machinePage, setMachinePage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [machineSearch, setMachineSearch] = useState("");
@@ -71,7 +73,7 @@ export function MachinesPage() {
         breadcrumb={[]}
         title="Machines"
         subtitle="Manage production machines, availability, types, and assigned schedules."
-        actions={<button className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New machine</button>}
+        actions={canCreate ? <button className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New machine</button> : undefined}
       />
 
       <StatsRow>
@@ -109,17 +111,17 @@ export function MachinesPage() {
           { key: "cavity", align: "right", header: "Cavity", cell: (machine) => machine.cavity ?? "—" },
           { key: "status", header: "Status", cell: (machine) => <span className={machine.isActive ? ui.statusFulfilled : ui.statusCancelled}>{machine.isActive ? "Active" : "Inactive"}</span> },
           { key: "jobs", align: "right", header: "Scheduled jobs", cell: (machine) => jobsByMachine.get(machine.id) ?? 0 },
-          {
+          ...(canUpdate || canDelete ? [{
             key: "actions",
             header: "",
             className: "text-right whitespace-nowrap",
-            cell: (machine) => machine.hasSchedule ? null : <>
-              <button type="button" className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button>
-              <button type="button" className={ui.btnLinkDanger} onClick={() => {
+            cell: (machine: Machine) => machine.hasSchedule ? null : <>
+              {canUpdate && <button type="button" className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button>}
+              {canDelete && <button type="button" className={ui.btnLinkDanger} onClick={() => {
                 if (window.confirm(`Delete machine ${machine.lineCode}?`)) void removeMachine(machine.id);
-              }}>Delete</button>
+              }}>Delete</button>}
             </>,
-          },
+          }] : []),
         ]}
         pagination={{ ...machinePagination, onPageChange: setMachinePage, onPageSizeChange: (size) => { setPageSize(size); setMachinePage(1); }, label: "Machines" }}
         isLoading={isLoading}

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, Plus, Upload } from "lucide-react";
 import { api } from "../api/client";
+import { useModulePermissions } from "../auth/permissions";
 import { Drawer } from "../components/Drawer";
 import { notify } from "../components/Notification";
 import { PageHeader } from "../components/PageHeader";
@@ -206,6 +207,7 @@ function MaintenanceScheduleDrawer({
 }
 
 export function MaintenancePage() {
+  const { create: canCreate, update: canUpdate, delete: canDelete } = useModulePermissions("maintenance");
   const [maintenancePage, setMaintenancePage] = useState(1);
   const [maintenanceSearch, setMaintenanceSearch] = useState("");
   const [maintenanceMachineFilter, setMaintenanceMachineFilter] = useState("All");
@@ -386,7 +388,7 @@ export function MaintenancePage() {
         breadcrumb={[]}
         title="Maintenance"
         subtitle="Manage preventive, corrective, and trial maintenance for each machine."
-        actions={
+        actions={canCreate ? (
           <>
             <input ref={importInput} className="hidden" type="file" accept=".xlsx" onChange={async (event) => {
               const file = event.target.files?.[0];
@@ -409,7 +411,7 @@ export function MaintenancePage() {
             <a className={ui.btnSecondary} href="/maintenance-schedule-template.xlsx" download><Download size={15} /><span className="sm:hidden">Template</span><span className="hidden sm:inline">Download Format</span></a>
             <button className={ui.btnPrimary} type="button" onClick={openAddDrawer}><Plus size={15} /> Add Schedule</button>
           </>
-        }
+        ) : undefined}
       />
 
       <StatsRow>
@@ -458,7 +460,7 @@ export function MaintenancePage() {
           { key: "pattern", header: "Pattern", cell: (window) => window.scheduleType === "Recurring" ? `Every ${window.repeatType === "Monthly" ? `month, day ${window.repeatValue}` : `week, ${window.repeatValue}`} · ${wibInputTime(window.startAt)}-${wibInputTime(window.endAt)}` : "One time" },
           { key: "next", header: "Next", cell: (window) => formatDate(window.startAt) },
           { key: "reason", header: "Reason", cell: (window) => window.reason ?? "—" },
-          { key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window) => isMaintenanceInProgress(window) ? null : <><button className={`${ui.btnLink} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canEditMaintenance(window)} title={!canEditMaintenance(window) ? "Jadwal sekali jalan yang sudah lewat tidak dapat diedit" : undefined} onClick={() => openEditMaintenance(window)}>Edit</button><button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button></> },
+          ...(canUpdate || canDelete ? [{ key: "actions", header: "", className: "text-right whitespace-nowrap", cell: (window: MaintenanceWindow) => isMaintenanceInProgress(window) ? null : <>{canUpdate && <button className={`${ui.btnLink} disabled:cursor-not-allowed disabled:opacity-40`} disabled={!canEditMaintenance(window)} title={!canEditMaintenance(window) ? "Jadwal sekali jalan yang sudah lewat tidak dapat diedit" : undefined} onClick={() => openEditMaintenance(window)}>Edit</button>}{canDelete && <button className={ui.btnLinkDanger} onClick={() => removeMaintenanceWindow(window.id)}>Remove</button>}</> }] : []),
         ]}
         pagination={{ ...maintenancePagination, onPageChange: setMaintenancePage, label: "Maintenance" }}
         isLoading={isLoading}
