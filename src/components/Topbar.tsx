@@ -74,7 +74,9 @@ export function Topbar({ collapsed, onToggleCollapsed, onOpenMobile }: Props) {
                   : job.status === "Ready" && !job.isLatest
                     ? { title: "Digantikan optimasi baru", copy: "Hasil ini tidak dapat direview lagi.", Icon: Clock3, color: "text-slate-500" }
                   : job.status === "Ready" && job.canApply
-                    ? { title: "Siap direview", copy: job.errorMessage ?? `Bisa diterapkan sampai ${formatDateTime(job.applyUntil!)} WIB.`, Icon: ClipboardList, color: "text-brand-600" }
+                    ? job.errorMessage && !job.errorMessage.startsWith("AI belum mengembalikan jadwal Buffer")
+                      ? { title: "Apply belum berhasil", copy: job.errorMessage, Icon: TriangleAlert, color: "text-amber-600" }
+                      : { title: "Siap direview", copy: job.errorMessage ?? `Bisa diterapkan sampai ${formatDateTime(job.applyUntil!)} WIB.`, Icon: ClipboardList, color: "text-brand-600" }
                     : job.status === "Ready"
                       ? { title: "Hari produksi sudah berganti", copy: "Hasil tetap tersimpan, tetapi tidak dapat diterapkan.", Icon: Clock3, color: "text-slate-500" }
                       : job.status === "Applied"

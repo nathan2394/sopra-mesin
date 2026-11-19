@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { ArrowLeftRight, Box, CalendarDays, ChevronDown, LayoutGrid, List, Settings, Wrench, X } from "lucide-react";
+import { ArrowLeftRight, Box, CalendarDays, ChevronDown, LayoutGrid, List, Settings, ShieldCheck, Wrench, X } from "lucide-react";
 import { NavLink } from "react-router-dom";
+import { isAdmin } from "../api/client";
+import { usePermissions, type ModuleKey } from "../auth/permissions";
 import { Logo } from "./Logo";
 
 interface Props {
@@ -9,26 +11,39 @@ interface Props {
   onCloseMobile: () => void;
 }
 
-const NAV_GROUPS = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutGrid;
+  end: boolean;
+  module?: ModuleKey;
+  adminOnly?: boolean;
+}
+
+const NAV_GROUPS: Array<{ label: string; items: NavItem[] }> = [
   {
     label: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: LayoutGrid, end: true }],
+    items: [{ to: "/", label: "Dashboard", icon: LayoutGrid, end: true, module: "dashboard" }],
   },
   {
     label: "Master",
     items: [
-      { to: "/orders", label: "Orders", icon: List, end: false },
-      { to: "/machines", label: "Machines", icon: Settings, end: false },
+      { to: "/orders", label: "Orders", icon: List, end: false, module: "orders" },
+      { to: "/machines", label: "Machines", icon: Settings, end: false, module: "machines" },
     ],
   },
   {
     label: "Transaction",
     items: [
-      { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false },
-      { to: "/maintenance", label: "Maintenance", icon: Wrench, end: false },
-      { to: "/setup", label: "Setup", icon: ArrowLeftRight, end: false },
-      { to: "/hot-runner", label: "Hot Runner", icon: Box, end: false },
+      { to: "/schedule", label: "Schedule", icon: CalendarDays, end: false, module: "schedule" },
+      { to: "/maintenance", label: "Maintenance", icon: Wrench, end: false, module: "maintenance" },
+      { to: "/setup", label: "Setup", icon: ArrowLeftRight, end: false, module: "setup" },
+      { to: "/hot-runner", label: "Hot Runner", icon: Box, end: false, module: "hot-runner" },
     ],
+  },
+  {
+    label: "Administration",
+    items: [{ to: "/users", label: "Users & Roles", icon: ShieldCheck, end: false, adminOnly: true }],
   },
 ];
 
@@ -37,7 +52,13 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: Props) {
     Overview: true,
     Master: true,
     Transaction: true,
+    Administration: true,
   });
+  const { can } = usePermissions();
+  const admin = isAdmin();
+  const visibleGroups = NAV_GROUPS
+    .map((group) => ({ ...group, items: group.items.filter((item) => item.adminOnly ? admin : item.module ? can(item.module, "view") : false) }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <>
@@ -52,7 +73,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: Props) {
       </div>
 
       <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-2.5 pt-1">
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label} className="mb-3">
               <button
                 type="button"

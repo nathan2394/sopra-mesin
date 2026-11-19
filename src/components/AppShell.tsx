@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { api } from "../api/client";
+import { setPermissions, type PermissionMap } from "../auth/permissions";
 import { ScheduleOptimizationProvider } from "../hooks/useScheduleOptimization";
 
 const COLLAPSE_KEY = "sopra-pps-sidebar-collapsed";
@@ -25,6 +27,12 @@ export function AppShell() {
       // localStorage unavailable — collapse state just won't persist across reloads.
     }
   }, [collapsed]);
+
+  useEffect(() => {
+    void api<{ permissions: PermissionMap }>("/auth/me")
+      .then((me) => setPermissions(me.permissions))
+      .catch(() => undefined);
+  }, []);
 
   return (
     <ScheduleOptimizationProvider>

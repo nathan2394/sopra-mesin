@@ -19,6 +19,7 @@ interface Props {
   linkedJob?: ScheduleJob;
   machine?: Machine;
   orderRef?: string;
+  access?: { editSchedule: boolean; correctiveMaintenance: boolean };
   onSave?: (value: { isLocked: boolean; startAt?: string; endAt?: string; correctiveMaintenance?: { reason: string; estimatedHours: number } }) => Promise<boolean> | boolean;
   onClose: () => void;
 }
@@ -68,7 +69,9 @@ function ArrowIcon() {
   );
 }
 
-export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linkedCorrectiveMaintenance, linkedJob, machine, orderRef, onSave, onClose, machines, onSaveSetup, getSetupJobs }: Props) {
+export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linkedCorrectiveMaintenance, linkedJob, machine, orderRef, onSave, onClose, machines, onSaveSetup, getSetupJobs, access }: Props) {
+  const allowEditSchedule = access?.editSchedule ?? true;
+  const allowCorrective = access?.correctiveMaintenance ?? true;
   const [setupJobs, setSetupJobs] = useState<{ id: string; jobs: ScheduleJob[]; error?: string } | null>(null);
   const [reloadSetupJobs, setReloadSetupJobs] = useState(0);
   useEffect(() => {
@@ -111,7 +114,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
     Date.parse(maintenance.startAt) > Date.now();
   const isComplete = job?.status === JobStatus.ProductionComplete;
   const hasActiveCorrective = !!linkedCorrectiveMaintenance || job?.status === JobStatus.ProductionPending;
-  const canEdit = job?.status === JobStatus.Open;
+  const canEdit = job?.status === JobStatus.Open && allowEditSchedule;
   const canEditSchedule = canEdit && !locked && !!job;
   const showScheduleInputs = canEditSchedule && editingSchedule;
   const isMaintenance = !!maintenance;
@@ -178,6 +181,7 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                 </button>
               </div>
 
+              {job?.issue && <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3"><p className="text-xs font-semibold text-amber-800">Issue</p><p className="mt-1 whitespace-pre-wrap text-sm text-amber-950">{job.issue}</p></div>}
               <div className="grid grid-cols-2 gap-x-8 gap-y-5 rounded-lg bg-slate-50 p-4">
                 <div><p className="text-13 text-slate-400">Qty</p><p className="mt-1 text-sm font-semibold text-slate-950">{job ? `${job.qty.toLocaleString()} pcs` : "-"}</p></div>
                 <div><p className="text-13 text-slate-400">Order number</p><p className="mt-1 text-sm font-semibold text-slate-950">{job?.sourceOrderRefs ?? "-"}</p></div>
@@ -317,6 +321,11 @@ export function ScheduleDetailDrawer({ job, maintenance, setupMaintenance, linke
                       <TimelinePoint label="End Corrective" value={linkedCorrectiveMaintenance.endAt} />
                     </div>
                   )}
+                </>
+              ) : !allowCorrective ? (
+                <>
+                  <span className="text-sm font-semibold text-slate-900">Corrective Maintenance</span>
+                  <p className="mt-2 text-xs text-slate-500">None scheduled for this order.</p>
                 </>
               ) : (
                 <div className="flex items-center gap-3">

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { usePermissions } from "../auth/permissions";
 import { api } from "../api/client";
 import { PageHeader } from "../components/PageHeader";
 import { useOrders } from "../hooks/useOrders";
@@ -21,6 +22,7 @@ interface AttentionRow {
 }
 
 export function DashboardPage() {
+  const { canViewPath } = usePermissions();
   const { orders } = useOrders();
   const { machines, maintenanceWindows, scheduleJobs } = useProduction({
     machines: { page: 1, pageSize: 100 },
@@ -170,7 +172,7 @@ export function DashboardPage() {
       <section className={`${ui.card} mb-5`}>
         <div className="mb-3.5 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-900">Live machine status</h2>
-          <Link to="/schedule" className={ui.btnLink}>Open schedule {"->"}</Link>
+          {canViewPath("/schedule") && <Link to="/schedule" className={ui.btnLink}>Open schedule {"->"}</Link>}
         </div>
         <DataTable
           rows={machineRows}
@@ -205,7 +207,7 @@ export function DashboardPage() {
               { key: "type", header: "Issue", cell: (row) => <span className={ui.statusCancelled}>{row.type}</span> },
               { key: "detail", header: "Detail", cell: (row) => row.detail },
               { key: "note", header: "Status", cell: (row) => row.note },
-              { key: "action", header: "", className: "text-right", cell: (row) => <Link to={row.to} className={ui.btnLink}>Open</Link> },
+              { key: "action", header: "", className: "text-right", cell: (row) => canViewPath(row.to) ? <Link to={row.to} className={ui.btnLink}>Open</Link> : null },
             ]}
           />
         </section>
@@ -213,7 +215,7 @@ export function DashboardPage() {
         <section className={ui.card}>
           <div className="mb-3.5 flex items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-slate-900">Upcoming deliveries</h2>
-            <Link to="/orders" className={ui.btnLink}>View all orders {"->"}</Link>
+            {canViewPath("/orders") && <Link to="/orders" className={ui.btnLink}>View all orders {"->"}</Link>}
           </div>
           <DataTable
             rows={upcoming}

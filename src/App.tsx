@@ -10,7 +10,9 @@ import { MaintenancePage } from "./pages/MaintenancePage";
 import { SetupPage } from "./pages/SetupPage";
 import { HotRunnerPage } from "./pages/HotRunnerPage";
 import { LoginPage } from "./pages/LoginPage";
+import { UsersPage } from "./pages/UsersPage";
 import { Notification } from "./components/Notification";
+import { RequireAdmin, RequireView } from "./components/RouteGuards";
 
 function App() {
   const [authenticated, setAuthenticated] = useState(hasToken);
@@ -24,13 +26,14 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route element={<AppShell />}>
-              <Route index element={<DashboardPage />} />
-              <Route path="/orders" element={<OrdersPage />} />
-              <Route path="/schedule" element={<SchedulePage />} />
-              <Route path="/machines" element={<MachinesPage />} />
-              <Route path="/maintenance" element={<MaintenancePage />} />
-              <Route path="/setup" element={<SetupPage />} />
-              <Route path="/hot-runner" element={<HotRunnerPage />} />
+              <Route index element={<RequireView module="dashboard"><DashboardPage /></RequireView>} />
+              <Route path="/orders" element={<RequireView module="orders"><OrdersPage /></RequireView>} />
+              <Route path="/schedule" element={<RequireView module="schedule"><SchedulePage /></RequireView>} />
+              <Route path="/machines" element={<RequireView module="machines"><MachinesPage /></RequireView>} />
+              <Route path="/maintenance" element={<RequireView module="maintenance"><MaintenancePage /></RequireView>} />
+              <Route path="/setup" element={<RequireView module="setup"><SetupPage /></RequireView>} />
+              <Route path="/hot-runner" element={<RequireView module="hot-runner"><HotRunnerPage /></RequireView>} />
+              <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
             </Route>
           </Routes>
         </BrowserRouter>

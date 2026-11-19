@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Plus } from "lucide-react";
+import { useModulePermissions } from "../auth/permissions";
 import { useOrders } from "../hooks/useOrders";
 import { useDebouncedValue } from "../hooks/useDebouncedValue";
 import { OrderForm } from "../components/OrderForm";
@@ -38,6 +39,7 @@ const itemDates = (dates: (string | undefined)[]) => {
 };
 
 export function OrdersPage() {
+  const { create: canCreate } = useModulePermissions("orders");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
   const [search, setSearch] = useState("");
@@ -78,7 +80,7 @@ export function OrdersPage() {
         breadcrumb={[]}
         title="Orders"
         subtitle="Review imported orders and manage production requests and forecasts."
-        actions={<button type="button" className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New order</button>}
+        actions={canCreate ? <button type="button" className={ui.btnPrimary} onClick={() => { setEditing(null); setFormOpen(true); }}><Plus size={15} /> New order</button> : undefined}
       />
 
       <StatsRow>
@@ -152,6 +154,7 @@ interface OrderTableProps {
 }
 
 function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagination, onPageChange, onPageSizeChange, isLoading }: OrderTableProps) {
+  const { update: canUpdate, delete: canDelete } = useModulePermissions("orders");
   const direction = (key: SortKey) => sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
   const sortHeader = (key: SortKey, title: string) => {
     const Icon = sortKey === key ? (sortDir === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
@@ -172,7 +175,7 @@ function OrderTable({ orders, onEdit, onDelete, sortKey, sortDir, onSort, pagina
       { key: "qty", header: sortHeader("qty", "Total qty"), sortDirection: direction("qty"), align: "right", className: "whitespace-nowrap", cell: (order) => <span className="font-medium">{computeOrderTotals(order.items).qty.toLocaleString()}</span> },
       { key: "ship", header: "Ship date", className: "whitespace-nowrap", cell: (order) => itemDates(order.items.map((item) => item.shipDate)) },
       { key: "delivery", header: sortHeader("deliveryDate", "Delivery date"), sortDirection: direction("deliveryDate"), className: "whitespace-nowrap", cell: (order) => itemDates(order.items.map((item) => item.deliveryDate)) },
-      { key: "actions", header: "", align: "right", className: "whitespace-nowrap", cell: (order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <div className="inline-flex items-center gap-1"><button type="button" aria-label={`Edit order ${order.orderNo}`} className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button><button type="button" aria-label={`Delete order ${order.orderNo}`} className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button></div> : <span className="text-2xs text-slate-400">Imported</span> },
+      ...(canUpdate || canDelete ? [{ key: "actions", header: "", align: "right" as const, className: "whitespace-nowrap", cell: (order: Order) => order.sourceType === OrderSourceType.ManualRequest || order.sourceType === OrderSourceType.ManualForecast ? <div className="inline-flex items-center gap-1">{canUpdate && <button type="button" aria-label={`Edit order ${order.orderNo}`} className={ui.btnLink} onClick={() => onEdit(order)}>Edit</button>}{canDelete && <button type="button" aria-label={`Delete order ${order.orderNo}`} className={ui.btnLinkDanger} onClick={() => onDelete(order)}>Delete</button>}</div> : <span className="text-2xs text-slate-400">Imported</span> }] : []),
     ]}
     pagination={{ ...pagination, onPageChange, onPageSizeChange, label: "Orders" }}
   />;

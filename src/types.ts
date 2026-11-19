@@ -107,6 +107,7 @@ export interface ScheduleJob {
   id: string;
   machineId: string;
   isLocked: boolean;
+  issue?: string | null;
   productName: string;
   preform?: string;
   cavity?: number;

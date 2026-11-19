@@ -5,6 +5,7 @@ export interface OptimizedSchedule {
     preform?: string | null;
     cavity?: number | null;
     quantity: number;
+    issue?: string | null;
     startAt: string;
     endAt: string;
   }>;

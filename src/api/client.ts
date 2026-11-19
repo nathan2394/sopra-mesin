@@ -1,4 +1,5 @@
 import { queueWarning } from "../components/Notification";
+import { clearPermissions, setPermissions, type PermissionMap } from "../auth/permissions";
 
 const API_URL = import.meta.env?.VITE_API_URL ?? "https://localhost:5081/api";
 const TOKEN_KEY = "sopra-mesin-token";
@@ -27,11 +28,13 @@ export const hasToken = () => Boolean(localStorage.getItem(TOKEN_KEY));
 export const currentUsername = () => localStorage.getItem(USER_KEY) ?? "User";
 export const currentEmail = () => localStorage.getItem(EMAIL_KEY) ?? "";
 export const currentRole = () => localStorage.getItem(ROLE_KEY) ?? "";
+export const isAdmin = () => currentRole().toLowerCase() === "admin";
 export const logout = () => {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
   localStorage.removeItem(EMAIL_KEY);
   localStorage.removeItem(ROLE_KEY);
+  clearPermissions();
 };
 
 interface AuthResult {
@@ -39,6 +42,7 @@ interface AuthResult {
   username: string;
   email?: string;
   role?: string;
+  permissions?: PermissionMap;
   googleAccount?: GoogleAccount | null;
 }
 
@@ -106,6 +110,7 @@ const saveAuth = (auth: AuthResult) => {
     if (typeof value === "string" && value.trim()) localStorage.setItem(key, value.trim());
     else localStorage.removeItem(key); // Do not retain the previous user's profile.
   }
+  setPermissions(auth.permissions);
 };
 
 async function send<T>(path: string, init: RequestInit): Promise<T> {
