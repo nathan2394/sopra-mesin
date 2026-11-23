@@ -316,7 +316,10 @@ export function useProduction(options: ProductionOptions = {}) {
 
   const updateMachine = useCallback(async (id: string, draft: MachineDraft) => {
     try {
-      await api<ApiMachine>(`/machines/${id}`, { method: "POST", body: JSON.stringify(draft) });
+      await api<ApiMachine>(`/machines/${id}/items`, {
+        method: "POST",
+        body: JSON.stringify({ bannedItems: draft.bannedItems, dedicatedItems: draft.dedicatedItems }),
+      });
       await refreshMachineData();
       notify("success", "Machine updated successfully.");
       return true;
