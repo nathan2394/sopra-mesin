@@ -44,6 +44,8 @@ export interface Machine {
   cavity?: number;
   hasSchedule: boolean;
   isActive: boolean;
+  bannedItems: string[];
+  dedicatedItems: string[];
   createdAt: string;
   updatedAt: string;
 }

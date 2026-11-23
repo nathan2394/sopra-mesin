@@ -115,9 +115,9 @@ export function MachinesPage() {
             key: "actions",
             header: "",
             className: "text-right whitespace-nowrap",
-            cell: (machine: Machine) => machine.hasSchedule ? null : <>
+            cell: (machine: Machine) => <>
               {canUpdate && <button type="button" className={ui.btnLink} onClick={() => { setEditing(machine); setFormOpen(true); }}>Edit</button>}
-              {canDelete && <button type="button" className={ui.btnLinkDanger} onClick={() => {
+              {canDelete && !machine.hasSchedule && <button type="button" className={ui.btnLinkDanger} onClick={() => {
                 if (window.confirm(`Delete machine ${machine.lineCode}?`)) void removeMachine(machine.id);
               }}>Delete</button>}
             </>,
